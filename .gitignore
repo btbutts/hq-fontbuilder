@@ -1,0 +1,7 @@
+.fontbuilder.venv
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+fonts/
+composer.toml
+out/

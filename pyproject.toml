@@ -1,0 +1,50 @@
+[project]
+name = "font-composer"
+version = "0.1.0"
+description = "Compose one monospace terminal font from per-group donors, chosen in a web console."
+requires-python = ">=3.12"
+dependencies = ["fonttools>=4.50"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["."]
+extend-exclude = [".fontbuilder.venv", "fonts"]
+
+[tool.ruff.lint]
+preview = true
+select = ["E", "W", "F", "I", "N", "D", "UP", "B", "C4", "SIM", "PL", "FURB", "RUF", "PTH",
+          "PIE", "RET", "PERF", "TRY", "ARG"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.pylint.main]
+ignore-paths = ["^.fontbuilder.venv/", "^fonts/"]
+# pylint E0401 does a real import; make the project root importable from anywhere.
+init-hook = """
+import sys
+from pathlib import Path
+cwd = Path.cwd()
+for base in (cwd / "fontbuilder", cwd):
+    if (base / "font_composer").is_dir():
+        sys.path.insert(0, str(base))
+        break
+"""
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.basic]
+module-rgx = "^[a-zA-Z0-9_]+$"
+
+[tool.pyright]
+pythonVersion = "3.12"
+include = ["font_composer", "tests"]
+venvPath = "."
+venv = ".fontbuilder.venv"
+typeCheckingMode = "standard"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
