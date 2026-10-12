@@ -5,3 +5,8 @@ __pycache__/
 fonts/
 composer.toml
 out/
+
+# composer web console (src/composer-web) build intermediates; the compiled
+# output in font_composer/composer/web/static/ IS committed on purpose.
+node_modules/
+.svelte-kit/

@@ -2,16 +2,19 @@
 
 Routes:
 
-* ``GET /`` and ``GET /static/*`` — the two pages, their scripts and the stylesheet.
 * ``GET /api/state`` — the full snapshot: families, groups, coverage, choices,
   summary, problem fonts and the version counter.
-* ``GET /api/version`` — just the version counter; pages poll it and refetch the
-  state when it changed (the directory watcher bumps it).
+* ``GET /api/version`` — just the version counter; the SPA polls it and refetches
+  the state when it changed (the directory watcher bumps it).
 * ``POST /api/choose`` ``{group, family|null}`` — record a choice, save the
   configuration and bump the version.
 * ``GET /fonts/<family>/<filename>`` — raw font bytes for ``@font-face``, guarded
   against path traversal: only files directly inside a family folder of the scanned
   fonts directory are served.
+* any other ``GET`` — the compiled SvelteKit SPA from the static directory: files
+  are served by URL path, and any path that does not map to an existing file gets
+  ``index.html`` so client-side routes (e.g. ``/group?family=…&group=…``) load the
+  app shell. Paths that escape the static directory are rejected with a 400.
 
 The state the routes serialize lives in :mod:`font_composer.composer.state`.
 """
@@ -35,6 +38,11 @@ _STATIC_TYPES = {
     ".html": "text/html; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".ico": "image/x-icon",
+    ".woff2": "font/woff2",
 }
 
 _FONT_TYPES = {".ttf": "font/ttf", ".otf": "font/otf"}
@@ -88,20 +96,14 @@ class _Handler(BaseHTTPRequestHandler):
     def _route_get(self) -> None:
         """Dispatch GET requests."""
         path = urlparse(self.path).path
-        if path == "/":
-            self._send_file(STATIC_DIR / "index.html", _STATIC_TYPES[".html"])
-        elif path == "/group.html":
-            self._send_file(STATIC_DIR / "group.html", _STATIC_TYPES[".html"])
-        elif path.startswith("/static/"):
-            self._get_static(path.removeprefix("/static/"))
-        elif path == "/api/state":
+        if path == "/api/state":
             self._send_json(self._state.snapshot())
         elif path == "/api/version":
             self._send_json({"version": self._state.version})
         elif path.startswith("/fonts/"):
             self._get_font(path.removeprefix("/fonts/"))
         else:
-            self._send_json({"error": f"not found: {path}"}, status=404)
+            self._get_static(path)
 
     def _route_post(self) -> None:
         """Dispatch POST requests (only ``/api/choose`` exists)."""
@@ -126,12 +128,20 @@ class _Handler(BaseHTTPRequestHandler):
         status, payload = self._state.choose(body["group"], family)
         self._send_json(payload, status=status)
 
-    def _get_static(self, name: str) -> None:
-        """Serve one file from the package's static directory."""
-        target = (STATIC_DIR / unquote(name)).resolve()
-        if not target.is_file() or not target.is_relative_to(STATIC_DIR.resolve()):
-            self._send_json({"error": f"not found: /static/{name}"}, status=404)
+    def _get_static(self, path: str) -> None:
+        """Serve a static file by URL path, falling back to ``index.html``.
+
+        The SPA is compiled into the static directory, so most paths map to a real
+        file; client-side routes such as ``/group`` do not and get the app shell.
+        Paths that resolve outside the static directory are a traversal attempt.
+        """
+        static_root = STATIC_DIR.resolve()
+        target = (static_root / unquote(path).lstrip("/")).resolve()
+        if not target.is_relative_to(static_root):
+            self._send_json({"error": f"invalid path: {path}"}, status=400)
             return
+        if not target.is_file():
+            target = static_root / "index.html"
         self._send_file(target, _STATIC_TYPES.get(target.suffix, "application/octet-stream"))
 
     def _get_font(self, relative: str) -> None:

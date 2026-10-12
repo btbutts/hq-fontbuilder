@@ -115,3 +115,23 @@ arrows = "DejaVu"
 .fontbuilder.venv/bin/pylint font_composer tests
 .fontbuilder.venv/bin/pyright
 ```
+
+### _Web console source_
+
+The console served by `compose` is a SvelteKit + TypeScript + TailwindCSS single-page
+app whose source lives in `src/composer-web/` (requires Node/npm):
+
+```sh
+cd src/composer-web
+npm install          # once
+npm run build        # compiles into font_composer/composer/web/static/
+npm run check        # svelte-check (TypeScript strict)
+npm run dev          # dev server; the Python console must run alongside it
+                     # (default port 8765) — /api and /fonts are proxied to it
+```
+
+`npm run build` wipes and rewrites `font_composer/composer/web/static/`, which is the
+directory the Python server serves. **The compiled output is committed**, so the
+console works without npm; only rebuild after changing the source. The Python server
+serves any unknown non-API path as `index.html`, so client-side routes like
+`/group?family=…&group=…` work on a hard refresh.
