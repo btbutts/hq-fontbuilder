@@ -1,1 +1,1 @@
-"""The web research console package: a stdlib HTTP server plus static pages."""
+"""The font-composer's web console package: a stdlib HTTP server plus static pages."""

@@ -1,4 +1,4 @@
-"""Stdlib HTTP server exposing the research console.
+"""Stdlib HTTP server exposing the font-composer web console.
 
 Routes:
 

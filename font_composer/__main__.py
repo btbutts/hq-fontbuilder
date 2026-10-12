@@ -3,11 +3,12 @@
 Commands:
 
 * ``inspect FILE...`` — print each font's metadata and per-group coverage.
-* ``serve --fonts-dir DIR --config FILE [--port N]`` — run the web research console.
+* ``compose --fonts-dir DIR --config FILE [--port N]`` — run the font-composer web
+  console (watches the fonts directory, hosts the selection UI, writes the config).
 * ``build`` — assemble the composed fonts (not implemented yet).
 
 This module is a thin orchestrator: it parses the command line and delegates to
-:mod:`font_composer.common` (inspect), :mod:`font_composer.composer` (serve) and
+:mod:`font_composer.common` (inspect), :mod:`font_composer.composer` (compose) and
 :mod:`font_composer.builder` (build).
 """
 
@@ -42,12 +43,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     inspect_parser = subparsers.add_parser("inspect", help="print one font's coverage")
     inspect_parser.add_argument("files", nargs="+", type=Path, help="font files to read")
 
-    serve_parser = subparsers.add_parser("serve", help="run the web research console")
-    serve_parser.add_argument("--fonts-dir", type=Path, required=True,
-                              help="directory of family folders to watch")
-    serve_parser.add_argument("--config", type=Path, required=True,
-                              help="composer.toml to read and write")
-    serve_parser.add_argument("--port", type=int, default=8765, help="port (default 8765)")
+    compose_parser = subparsers.add_parser(
+        "compose", help="run the font-composer web console (writes the .toml config)")
+    compose_parser.add_argument("--fonts-dir", type=Path, required=True,
+                                help="directory of family folders to watch")
+    compose_parser.add_argument("--config", type=Path, required=True,
+                                help="composer.toml to read and write")
+    compose_parser.add_argument("--port", type=int, default=8765,
+                                help="port (default 8765)")
 
     subparsers.add_parser("build", help="assemble the composed fonts (not implemented yet)")
     return parser.parse_args(argv)
@@ -96,8 +99,8 @@ def run_inspect(files: Sequence[Path]) -> int:
     return status
 
 
-def run_serve(fonts_dir: Path, config_path: Path, port: int) -> int:
-    """Run the web research console until interrupted."""
+def run_compose(fonts_dir: Path, config_path: Path, port: int) -> int:
+    """Run the font-composer web console until interrupted."""
     library = FontLibrary.scan(fonts_dir)
     default_base = ""
     for family in library.families:
@@ -118,8 +121,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "inspect":
         return run_inspect(args.files)
-    if args.command == "serve":
-        return run_serve(args.fonts_dir, args.config, args.port)
+    if args.command == "compose":
+        return run_compose(args.fonts_dir, args.config, args.port)
     return build()
 
 

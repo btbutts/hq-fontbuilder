@@ -1,4 +1,11 @@
-# font-composer
+# HQ-FontBuilder
+
+### This project consists of two primary components, the _`font-composer`_ and the _`font-builder`_:
+  - The **font-composer** allows this python tool tool monitor a directory for newly added fonts (seee explanation below for how to structure this), spins up a web interface, and hosts those TTF fonts on the interface so you can make selections as to which glyph categories you'd like to extract from each font for your new singular output custom font family, of which multiple styles may be generated like Bold, Regular, Light, Condensed, etc... This process will generate an output .toml config
+  - The **font-builder** tool of this python module will generate output fonts from the `.toml` file you generated from within the **font-composer**.
+  - This process is meant to help simplify, both interactively, yet programatically, the process of extracing desired glyph packs from multple fonts into one singluar, unique font pack.
+
+## _Why this exists_
 
 Compose one monospace terminal font from per-group donors. Consoles like kmscon take
 missing glyphs from whatever fontconfig lists next — a fallback, not a design — so the
@@ -6,19 +13,20 @@ borrowed checkmarks, bullets and arrows have another size, weight and baseline t
 text around them. This tool instead builds **one font file per style in which every
 glyph group comes from the family you chose for it**, fitted to a single cell.
 
-The tool has two modes:
+The two components map to two commands:
 
-* **`serve` — the research console** (implemented). Watches a directory of font
-  families, shows a coverage table of glyph groups × families in a web page, lets you
-  inspect every glyph of a group drawn by each donor font inside the target cell, and
-  records your choices in `composer.toml` as you make them.
-* **`build` — the font assembler** (not implemented yet; the command exists and says
-  so). Will read `composer.toml` and write one TTF per requested style.
+* **`compose` — the font-composer** (implemented). Watches a directory of font
+  families, spins up the web interface, shows a coverage table of glyph groups ×
+  families, lets you inspect every glyph of a group drawn by each donor font inside
+  the target cell, and records your choices in the output `.toml` config as you make
+  them.
+* **`build` — the font-builder** (not implemented yet; the command exists and says
+  so). Will read the `.toml` config and write one TTF per requested style.
 
 A third command, **`inspect`**, prints one font's metadata and per-group coverage on
 the command line — the quick way to reproduce the coverage measurements for any file.
 
-## The fonts directory convention
+## _The fonts directory convention_
 
 ```
 fonts/
@@ -40,7 +48,7 @@ folders yourself): DejaVu Sans Mono, Fira Code, JetBrains Mono (+NL), Source Cod
 and the Nerd Fonts builds of Fira Mono and Inconsolata, each in the plain and the
 `Mono` (single-cell icons) variant.
 
-## Quick start
+## _Quick start_
 
 Requires Python 3.12+. Set up the environment once:
 
@@ -55,10 +63,10 @@ Inspect a font (metadata, fixed-width judgement, per-group coverage):
 .fontbuilder.venv/bin/python -m font_composer inspect fonts/DejaVu/DejaVuSansMono.ttf
 ```
 
-Run the research console and open <http://localhost:8765>:
+Run the font-composer web console and open <http://localhost:8765>:
 
 ```sh
-.fontbuilder.venv/bin/python -m font_composer serve --fonts-dir fonts --config composer.toml
+.fontbuilder.venv/bin/python -m font_composer compose --fonts-dir fonts --config composer.toml
 ```
 
 In the console:
@@ -76,7 +84,7 @@ In the console:
 * The **summary** at the bottom of the main page shows the composition so far and the
   groups still without a source, with the families that could fully cover them.
 
-## The configuration file
+## _The configuration file_
 
 `composer.toml` is created with sensible defaults on first run. The console only ever
 writes the `[groups]` table (group id → family label); everything else is yours to
