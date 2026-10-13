@@ -6,7 +6,9 @@ fonts/
 composer.toml
 out/
 
-# composer web console (src/composer-web) build intermediates; the compiled
-# output in font_composer/composer/web/static/ IS committed on purpose.
+# composer web console (src/composer-web) build intermediates and compiled
+# output: static/ only ever exists in a build context (local dev, the release
+# bot), so it is not tracked; the server answers 503 until the SPA is built.
 node_modules/
 .svelte-kit/
+font_composer/composer/web/static/

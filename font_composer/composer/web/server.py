@@ -14,7 +14,9 @@ Routes:
 * any other ``GET`` — the compiled SvelteKit SPA from the static directory: files
   are served by URL path, and any path that does not map to an existing file gets
   ``index.html`` so client-side routes (e.g. ``/group?family=…&group=…``) load the
-  app shell. Paths that escape the static directory are rejected with a 400.
+  app shell. Paths that escape the static directory are rejected with a 400. The
+  compiled SPA is a build artifact and not committed; when it is absent, page
+  requests get a 503 explaining how to compile it.
 
 The state the routes serialize lives in :mod:`font_composer.composer.state`.
 """
@@ -91,6 +93,21 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _send_not_built(self) -> None:
+        """Explain that the SPA has not been compiled yet (fresh clone)."""
+        body = (
+            b"<!doctype html><meta charset='utf-8'><title>font-composer</title>"
+            b"<h1>Web console not compiled</h1>"
+            b"<p>The console's static files are build artifacts and are not in the "
+            b"repository. Compile them once, then reload:</p>"
+            b"<pre>cd src/composer-web && npm install && npm run build</pre>"
+        )
+        self.send_response(503)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     # -- routing ---------------------------------------------------------
 
     def _route_get(self) -> None:
@@ -134,6 +151,7 @@ class _Handler(BaseHTTPRequestHandler):
         The SPA is compiled into the static directory, so most paths map to a real
         file; client-side routes such as ``/group`` do not and get the app shell.
         Paths that resolve outside the static directory are a traversal attempt.
+        When even the app shell is absent the SPA was never compiled here.
         """
         static_root = STATIC_DIR.resolve()
         target = (static_root / unquote(path).lstrip("/")).resolve()
@@ -142,6 +160,9 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if not target.is_file():
             target = static_root / "index.html"
+            if not target.is_file():
+                self._send_not_built()
+                return
         self._send_file(target, _STATIC_TYPES.get(target.suffix, "application/octet-stream"))
 
     def _get_font(self, relative: str) -> None:

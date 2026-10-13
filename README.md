@@ -123,15 +123,26 @@ app whose source lives in `src/composer-web/` (requires Node/npm):
 
 ```sh
 cd src/composer-web
-npm install          # once
+npm install          # once after cloning, then when package.json changes
 npm run build        # compiles into font_composer/composer/web/static/
 npm run check        # svelte-check (TypeScript strict)
-npm run dev          # dev server; the Python console must run alongside it
-                     # (default port 8765) — /api and /fonts are proxied to it
 ```
 
-`npm run build` wipes and rewrites `font_composer/composer/web/static/`, which is the
-directory the Python server serves. **The compiled output is committed**, so the
-console works without npm; only rebuild after changing the source. The Python server
-serves any unknown non-API path as `index.html`, so client-side routes like
-`/group?family=…&group=…` work on a hard refresh.
+**Python owns the webserver.** `python -m font_composer compose` is the only process
+you run: it watches the fonts directory, serves the JSON API and font files, and hosts
+the compiled SPA — no npm/vite process is needed at runtime. `npm run build` must
+simply have run at least once on this checkout (and again after any web source edit);
+until it has, page requests get a 503 explaining how to compile.
+
+The compiled output in `font_composer/composer/web/static/` is a build artifact and
+is **not committed** — it only exists in build contexts (a development checkout, or
+the release workflow bot, which compiles the SPA and tarballs it into the release).
+`npm run build` wipes and rewrites that directory, so you choose when to recompile.
+
+For frontend development only, `npm run dev` gives Vite's live-reload dev server; it
+proxies `/api` and `/fonts` to the Python console (default port 8765), which must run
+alongside it. This is optional — plain `npm run build` plus the Python console is the
+normal loop.
+
+The Python server serves any unknown non-API path as `index.html`, so client-side
+routes like `/group?family=…&group=…` work on a hard refresh.
