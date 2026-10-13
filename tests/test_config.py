@@ -41,7 +41,7 @@ def test_default_config_created_when_missing(tmp_path: Path) -> None:
     assert config.data["output"]["family"] == "Console Mono"
     assert config.data["output"]["styles"] == ["Regular", "Bold"]
     assert config.data["cell"]["base"] == "FiraCode"
-    assert config.choices == {}
+    assert not config.choices
     # The written file parses again.
     reloaded = tomllib.loads(path.read_text(encoding="utf-8"))
     assert reloaded == config.data
@@ -52,37 +52,67 @@ def test_round_trip_preserves_unknown_sections(tmp_path: Path) -> None:
     path = tmp_path / "composer.toml"
     path.write_text(HAND_EDITED, encoding="utf-8")
     config = Config.load(path)
-    config.choose("arrows", "DejaVu")
-    config.save()
+    config.update(lambda c: c.set_families("arrows", ["DejaVu"]))
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     assert data["output"] == {"family": "Console Mono", "styles": ["Regular", "Bold"]}
     assert data["cell"] == {"base": "FiraCode", "fit": "base"}
     assert data["group-options"] == {"geometric": {"scale": "fit-height", "align": "center"}}
     assert data["glyphs"] == {"U+2714": {"family": "DejaVu"}}
     assert data["styles"] == {"Bold": {"DejaVu": "Bold"}}
-    assert data["groups"] == {"alnum": "FiraCode", "arrows": "DejaVu"}
+    assert data["groups"] == {"alnum": "FiraCode", "arrows": ["DejaVu"]}
 
 
-def test_choose_replaces_and_clears(tmp_path: Path) -> None:
-    """One family per group: choosing another replaces; None clears."""
+def test_a_group_holds_an_ordered_list_and_a_bare_string_is_a_list_of_one(
+    tmp_path: Path,
+) -> None:
+    """Keep the order the families were given in; read the old string form."""
     path = tmp_path / "composer.toml"
     config = Config.load(path, default_base="FiraCode")
-    config.choose("arrows", "DejaVu")
-    config.choose("arrows", "JetBrainsMono")
-    assert config.choices == {"arrows": "JetBrainsMono"}
-    config.choose("arrows", None)
-    assert config.choices == {}
-    config.save()
+    config.set_families("arrows", ["DejaVu", "JetBrainsMono", "FiraCode"])
+    assert config.choices == {"arrows": ["DejaVu", "JetBrainsMono", "FiraCode"]}
+    config.set_families("arrows", ["FiraCode", "DejaVu"])
+    assert config.choices["arrows"] == ["FiraCode", "DejaVu"]
+    config.set_families("arrows", [])
+    assert not config.choices
+    path.write_text('[groups]\nalnum = "FiraCode"\npunctuation = ["A", "B"]\n', encoding="utf-8")
+    assert Config.load(path).choices == {"alnum": ["FiraCode"], "punctuation": ["A", "B"]}
+
+
+def test_glyph_overrides_round_trip_in_the_documented_shape(tmp_path: Path) -> None:
+    """Write ``"U+2714" = { family = "DejaVu" }``; keep hand-written extras on removal."""
+    path = tmp_path / "composer.toml"
+    path.write_text('[glyphs]\n"U+2605" = { family = "A", scale = 0.9 }\n', encoding="utf-8")
+    config = Config.load(path)
+    assert config.glyph_overrides == {0x2605: "A"}
+    config.update(lambda c: c.set_glyph_override(0x2714, "DejaVu"))
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    assert data["groups"] == {}
+    assert data["glyphs"]["U+2714"] == {"family": "DejaVu"}
+    assert data["glyphs"]["U+2605"] == {"family": "A", "scale": 0.9}
+    config.update(lambda c: c.set_glyph_override(0x2714, None))
+    config.update(lambda c: c.set_glyph_override(0x2605, None))
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert "U+2714" not in data["glyphs"]
+    assert data["glyphs"]["U+2605"] == {"scale": 0.9}
+
+
+def test_style_overrides_round_trip(tmp_path: Path) -> None:
+    """Write ``[styles.<Output>]`` family -> file, and drop the table when it empties."""
+    path = tmp_path / "composer.toml"
+    config = Config.load(path, default_base="A")
+    assert config.output_styles == ["Regular", "Bold"]
+    config.update(lambda c: c.set_style_override("Bold", "DejaVu", "DejaVuSansMono-Bold.ttf"))
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    assert data["styles"] == {"Bold": {"DejaVu": "DejaVuSansMono-Bold.ttf"}}
+    assert config.style_overrides == {"Bold": {"DejaVu": "DejaVuSansMono-Bold.ttf"}}
+    config.update(lambda c: c.set_style_override("Bold", "DejaVu", None))
+    assert "Bold" not in tomllib.loads(path.read_text(encoding="utf-8")).get("styles", {})
 
 
 def test_save_is_atomic_and_leaves_no_tmp(tmp_path: Path) -> None:
     """Leave no temporary file behind after saving."""
     path = tmp_path / "composer.toml"
     config = Config.load(path, default_base="FiraCode")
-    config.choose("dingbats", "DejaVu")
-    config.save()
+    config.update(lambda c: c.set_families("dingbats", ["DejaVu"]))
     assert not (tmp_path / "composer.toml.tmp").exists()
 
 

@@ -15,9 +15,13 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from font_composer.common.composition import GroupComposition, resolve_group
 from font_composer.common.config import Config, ConfigError
 from font_composer.common.groups import GROUPS, GROUPS_BY_ID, GlyphGroup
 from font_composer.common.library import Family, FontLibrary
+from font_composer.common.styles import find_style, parse_style_name, resolve_style
+
+CHOICE_ACTIONS = ("add", "remove", "up", "down", "clear")
 
 
 def coverage_matrix(library: FontLibrary) -> dict[str, dict[str, tuple[int, int]]]:
@@ -146,14 +150,22 @@ class ConsoleState:
             version = self.version
             base = self._base_metrics()
             config_error = self.config_error
-        summary = [
-            {
+            overrides = self.config.glyph_overrides
+            output_styles = self.config.output_styles
+            style_overrides = self.config.style_overrides
+        summary = []
+        for group in GROUPS:
+            order = choices.get(group.id, [])
+            covered = 0
+            if order:
+                covered = len(resolve_group(group, order, library, overrides).glyphs)
+            summary.append({
                 "group": group.id,
-                "chosen": choices.get(group.id),
+                "order": order,
+                "covered": covered,
+                "total": group.total,
                 "candidates": full_coverage_families(library, group),
-            }
-            for group in GROUPS
-        ]
+            })
         return {
             "version": version,
             "fontsDir": str(self.fonts_dir),
@@ -169,6 +181,8 @@ class ConsoleState:
             "uneven": {family.label: sorted(family.uneven_groups())
                        for family in library.families},
             "choices": choices,
+            "glyphOverrides": {f"U+{cp:04X}": family for cp, family in sorted(overrides.items())},
+            "styleMap": _style_map(library, choices, output_styles, style_overrides),
             "base": base,
             "summary": summary,
             "problems": [{"path": str(error.path), "reason": error.reason}
@@ -199,27 +213,249 @@ class ConsoleState:
             },
         }
 
-    def choose(self, group_id: str, family_label: str | None) -> tuple[int, dict[str, Any]]:
-        """Record a choice; return ``(http_status, payload)`` for the response."""
+    def choose(
+        self, group_id: str, family_label: str | None, action: str,
+    ) -> tuple[int, dict[str, Any]]:
+        """Change the inheritance order of a group; return ``(http_status, payload)``.
+
+        ``action`` is ``add`` (append the family; it ends up last), ``remove``, ``up`` or
+        ``down`` (move one place) or ``clear`` (no family). An atomic group takes one
+        family, which must cover it completely.
+        """
         group = GROUPS_BY_ID.get(group_id)
         if group is None:
             return 400, {"error": f"unknown group: {group_id!r}"}
+        if action not in CHOICE_ACTIONS:
+            return 400, {"error": f"unknown action: {action!r}"}
         with self._lock:
-            library = self.library
-            if family_label is not None:
-                family = library.family(family_label)
-                if family is None:
-                    return 400, {"error": f"unknown family: {family_label!r}"}
-                present, total = family.coverage(group)
-                if group.atomic and present < total:
-                    return 409, {
-                        "error": f"{group.id} is atomic and {family_label} covers only "
-                                 f"{present}/{total}; refusing the choice",
-                    }
+            self._reload_config()
+            order = list(self.config.choices.get(group_id, []))
+            problem = self._check_family(action, family_label)
+            if problem is not None:
+                return problem
+            result = _new_order(group, order, family_label, action, self.library)
+            if isinstance(result, tuple):
+                return result
             try:
-                self.config.update_choice(group_id, family_label)
+                self.config.update(lambda config: _apply_order(config, group, result))
             except ConfigError as exc:
                 return 500, {"error": str(exc)}
             self.config_error = None
             self.version += 1
         return 200, self.snapshot()
+
+    def _check_family(
+        self, action: str, family_label: str | None,
+    ) -> tuple[int, dict[str, Any]] | None:
+        """Return an error answer when the action needs a known family and has none."""
+        if action == "clear":
+            return None
+        if family_label is None or self.library.family(family_label) is None:
+            return 400, {"error": f"unknown family: {family_label!r}"}
+        return None
+
+    def composition(self, group_id: str) -> tuple[int, dict[str, Any]]:
+        """Resolve a group through its inheritance order and the glyph overrides."""
+        group = GROUPS_BY_ID.get(group_id)
+        if group is None:
+            return 400, {"error": f"unknown group: {group_id!r}"}
+        with self._lock:
+            self._reload_config()
+            library = self.library
+            order = list(self.config.choices.get(group_id, []))
+            overrides = self.config.glyph_overrides
+            version = self.version
+        composition = resolve_group(group, order, library, overrides)
+        return 200, _composition_payload(group, order, library, composition, version)
+
+    def set_glyph(self, codepoint: int, family_label: str | None) -> tuple[int, dict[str, Any]]:
+        """Pin one code point to one of its candidate families (None: back to the order)."""
+        group = next((item for item in GROUPS if codepoint in item.codepoint_set), None)
+        if group is None:
+            return 400, {"error": f"U+{codepoint:04X} is not in any glyph group"}
+        with self._lock:
+            self._reload_config()
+            order = list(self.config.choices.get(group.id, []))
+            problem = _glyph_problem(group, order, codepoint, family_label, self.library)
+            if problem is not None:
+                return problem
+            try:
+                self.config.update(
+                    lambda config: config.set_glyph_override(codepoint, family_label))
+            except ConfigError as exc:
+                return 500, {"error": str(exc)}
+            self.version += 1
+        return self.composition(group.id)
+
+    def set_style(
+        self, style: str, family_label: str, file_name: str | None,
+    ) -> tuple[int, dict[str, Any]]:
+        """Map an output style of a family to one of its style files (None: the default)."""
+        with self._lock:
+            self._reload_config()
+            library = self.library
+            if style not in self.config.output_styles:
+                return 400, {"error": f"{style!r} is not one of the output styles"}
+            family = library.family(family_label)
+            if family is None:
+                return 400, {"error": f"unknown family: {family_label!r}"}
+            if file_name is not None and find_style(family, file_name) is None:
+                return 400, {"error": f"{family_label} has no style {file_name!r}"}
+            try:
+                self.config.update(
+                    lambda config: config.set_style_override(style, family_label, file_name))
+            except ConfigError as exc:
+                return 500, {"error": str(exc)}
+            self.version += 1
+        return 200, self.snapshot()
+
+
+def _added(
+    group: GlyphGroup, order: list[str], label: str, library: FontLibrary,
+) -> list[str] | tuple[int, dict[str, Any]]:
+    """Return the order with ``label`` appended (a family already there stays put)."""
+    if label in order:
+        return order
+    if group.atomic:
+        return _atomic_add(group, order, label, library)
+    return [*order, label]
+
+
+def _new_order(
+    group: GlyphGroup, order: list[str], label: str | None, action: str, library: FontLibrary,
+) -> list[str] | tuple[int, dict[str, Any]]:
+    """Return the new order, or an error answer when the change is not allowed."""
+    result: list[str] | tuple[int, dict[str, Any]]
+    if action == "clear" or label is None:
+        result = []
+    elif action == "add":
+        result = _added(group, order, label, library)
+    elif label not in order:
+        result = (400, {"error": f"{label} is not chosen for {group.id}"})
+    elif action == "remove":
+        result = [family for family in order if family != label]
+    else:
+        result = _moved(order, label, -1 if action == "up" else 1)
+    return result
+
+
+def _moved(order: list[str], label: str, offset: int) -> list[str]:
+    """Return the order with one family moved ``offset`` places (not past either end)."""
+    index = order.index(label)
+    target = index + offset
+    moved = list(order)
+    if 0 <= target < len(moved):
+        moved[index], moved[target] = moved[target], moved[index]
+    return moved
+
+
+def _atomic_add(
+    group: GlyphGroup, order: list[str], label: str, library: FontLibrary,
+) -> list[str] | tuple[int, dict[str, Any]]:
+    """Allow one complete family for an atomic group, nothing else."""
+    if order:
+        return 409, {"error": f"{group.id} is atomic: it comes from one family, and "
+                              f"{order[0]} is chosen; remove it first"}
+    family = library.family(label)
+    present, total = family.coverage(group) if family is not None else (0, group.total)
+    if present < total:
+        return 409, {"error": f"{group.id} is atomic and {label} covers only "
+                              f"{present}/{total}; refusing the choice"}
+    return [label]
+
+
+def _apply_order(config: Config, group: GlyphGroup, order: list[str]) -> None:
+    """Write the order, and drop the glyph overrides of families that left the group."""
+    config.set_families(group.id, order)
+    for codepoint, family in config.glyph_overrides.items():
+        if codepoint in group.codepoint_set and family not in order:
+            config.set_glyph_override(codepoint, None)
+
+
+def _glyph_problem(
+    group: GlyphGroup, order: list[str], codepoint: int, label: str | None,
+    library: FontLibrary,
+) -> tuple[int, dict[str, Any]] | None:
+    """Return an error answer when a glyph may not be pinned to this family."""
+    message = None
+    if label is not None:
+        family = library.family(label)
+        reference = family.regular_style() if family is not None else None
+        if group.atomic:
+            message = f"{group.id} is atomic: its glyphs cannot be mixed"
+        elif label not in order:
+            message = f"{label} is not in the inheritance order of {group.id}"
+        elif reference is None or codepoint not in reference.info.codepoints:
+            message = f"{label} has no glyph for U+{codepoint:04X}"
+    return None if message is None else (409, {"error": message})
+
+
+def _composition_payload(
+    group: GlyphGroup, order: list[str], library: FontLibrary,
+    composition: GroupComposition, version: int,
+) -> dict[str, Any]:
+    """Serialize a resolved group for ``/api/composition``."""
+    fonts: dict[str, str] = {}
+    for label in order:
+        family = library.family(label)
+        reference = family.regular_style() if family is not None else None
+        if reference is not None:
+            fonts[label] = reference.file_name
+    glyphs = []
+    for glyph in composition.glyphs:
+        entry: dict[str, Any] = {"codepoint": glyph.codepoint, "source": glyph.source}
+        if len(glyph.candidates) > 1:
+            entry["candidates"] = list(glyph.candidates)
+        if glyph.overridden:
+            entry["overridden"] = True
+        glyphs.append(entry)
+    return {
+        "version": version,
+        "group": group.id,
+        "label": group.label,
+        "atomic": group.atomic,
+        "total": group.total,
+        "order": order,
+        "fonts": fonts,
+        "glyphs": glyphs,
+        "missing": composition.missing,
+        "contributions": composition.contributions(order),
+        "invalidOverrides": [
+            {"codepoint": item.codepoint, "family": item.family, "reason": item.reason}
+            for item in composition.invalid_overrides
+        ],
+    }
+
+
+def _style_map(
+    library: FontLibrary,
+    choices: dict[str, list[str]],
+    output_styles: list[str],
+    overrides: dict[str, dict[str, str]],
+) -> dict[str, Any]:
+    """Resolve every output style for every family that is used by some group."""
+    used: list[str] = []
+    for order in choices.values():
+        for label in order:
+            if label not in used and library.family(label) is not None:
+                used.append(label)
+    families: dict[str, list[dict[str, Any]]] = {}
+    entries: dict[str, dict[str, Any]] = {style: {} for style in output_styles}
+    for label in used:
+        family = library.family(label)
+        if family is None:
+            continue
+        families[label] = [
+            {"file": style.file_name, "style": style.info.names.style,
+             "weight": style.info.names.weight, "italic": style.info.names.italic}
+            for style in family.styles
+        ]
+        for style_name in output_styles:
+            choice = resolve_style(family, parse_style_name(style_name),
+                                   overrides.get(style_name, {}).get(label))
+            entries[style_name][label] = {
+                "file": choice.entry.file_name if choice.entry is not None else None,
+                "reason": choice.reason,
+                "overridden": choice.overridden,
+            }
+    return {"outputStyles": output_styles, "families": families, "entries": entries}

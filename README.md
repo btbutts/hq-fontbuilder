@@ -146,39 +146,88 @@ In the console:
   instead (the choice is remembered by the browser). The layout code is in
   `src/composer-web/src/lib/glyphLayout.ts` (pure functions, `npm test`) and
   `GlyphGrid.svelte`.
-* The **radio on the group page** chooses that family as the source of the group;
-  choosing another family elsewhere replaces the choice. Every choice is written to
-  `composer.toml` immediately.
-* The **summary** at the bottom of the main page shows the composition so far and the
-  groups still without a source, with the families that could fully cover them.
+* The **checkbox on the group page** (`use this family for this group`) adds the family
+  to the group's **inheritance order**, at the end; unchecking removes it. Choose the
+  families one after the other: the first is the group's first choice, and each following
+  one fills in the code points the earlier ones have no glyph for. A code point that
+  several families have is taken from the first of them. Every change is written to
+  `composer.toml` immediately. Atomic groups (`box-drawing`, `block-elements`) take one
+  family only, and a complete one.
+* The **Composition so far** table at the bottom of the main page has one row per glyph
+  category (`Glyph Categories`) and its families in order (`Font Inheritance Order`),
+  with how many of the group's code points they cover together. A category with at
+  least one family is a link to its **combined result**.
+* The **combined result** page shows the group as one font: every code point drawn from
+  the family that serves it (a colour bar under the cell says which; the list at the top
+  gives the order, with controls to move a family earlier or later or to remove it).
+  A **ring** in the corner of a cell marks a glyph that more than one family has: click
+  it and a pop-out shows each family's version side by side; click one to pin that
+  glyph to that family (a filled dot), or choose "use the inheritance order again". Pins
+  are written to `[glyphs]`. Atomic groups cannot be mixed, so they have no pop-out.
+* The **Style mapping** page (a link at the top of the main page) shows, for every
+  output style and every family in use, which of the family's style files serves it, and
+  lets you pick another. See "How style files are matched" below.
 
 ## _The configuration file_
 
 `composer.toml` is created with sensible defaults on first run. The console writes
-the `[groups]` table (group id → family label) and `[server] port` (the port it last
-listened on); everything else is yours to hand-edit, comments included, and survives the console's saves. You may edit the file
+`[groups]`, `[glyphs]`, `[styles.*]` and `[server] port`; everything else is yours to
+hand-edit, comments included, and survives the console's saves. You may edit the file
 while the console runs: it notices the change (and a file that does not parse is
 reported on the main page and never overwritten):
 
 ```toml
 [output]
 family = "Console Mono"
-styles = ["Regular", "Bold"]
+styles = ["Regular", "Bold"]       # the output styles; names such as "Bold Italic" work too
 
 [cell]
-base = "FiraCode"          # family that defines the cell: advance, ascent, descent
+base = "FiraCode"                  # family that defines the cell: advance, ascent, descent
 fit = "base"
 
-[groups]                   # written by the console
-box-drawing = "FiraCode"
-arrows = "DejaVu"
+[groups]                           # written by the console: group -> inheritance order
+alnum = ["FiraCode"]
+punctuation = ["FiraCode", "JetBrainsMono", "DejaVu"]   # first choice first
+arrows = ["DejaVu", "FiraCode"]
 
-[server]                   # written by the console
+[glyphs]                           # written by the console: code points pinned to a family
+"U+2714" = { family = "DejaVu" }   # (a bare string works too: "U+2714" = "DejaVu")
+
+[styles.Bold]                      # written by the console: which file serves an output style
+DejaVu = "DejaVuSansMono-Bold.ttf" # (a style name such as "Bold" is accepted too)
+
+[server]                           # written by the console
 port = 8710
 
-# hand-editable extras the build will honour: [group-options.<id>], [glyphs]
-# (single-glyph overrides), [styles.<Style>] (donor style per target style).
+# hand-editable extras the build will honour: [group-options.<id>] (how donor glyphs
+# are fitted to the cell).
 ```
+
+`[groups]` still accepts a plain string for a group (`alnum = "FiraCode"` is a list of
+one). TOML was kept for the file: it has ordered arrays, comments and inline tables, and
+the console and a human edit the same file.
+
+### How style files are matched
+
+Style *names* differ between families for what is the same style (`Oblique` and
+`Italic`, `Book` and `Regular`, `Demi` and `SemiBold`), so a family's file is never found by
+name. Every font carries two numbers that mean the same everywhere, the OS/2 weight class
+(100 Thin, 300 Light, 400 Regular, 500 Medium, 600 SemiBold, 700 Bold, 800 ExtraBold,
+900 Black) and its slant (the italic bit, the mac style bit or a non-zero italic angle). An
+output style name is turned into such a pair (`Bold Italic` is 700 italic; the spellings
+`Oblique`, `Slanted`, `Demi`, `Heavy`, `Book`, `Roman` ... are known), and a file is picked
+by these rules, in order:
+
+1. a file (or style name) given for that family in `[styles.<Output>]` wins;
+2. only files with the **same slant** are considered: an italic style is never served by
+   an upright file, and nothing is slanted artificially; a family without an italic has
+   no donor for an italic output style until you map one;
+3. among them the weight **equal** to the output style's, else the **nearest**; two files
+   equally near: the lighter one.
+
+Medium (500) and Black (900) are different weights and are never folded together. The
+Style mapping page shows the result and the reason for every pair. (Variable fonts are
+read as their default instance for now; the build will instantiate them.)
 
 ## Development
 

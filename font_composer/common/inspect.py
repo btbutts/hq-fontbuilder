@@ -19,6 +19,8 @@ from fontTools.ttLib import TTFont, TTLibError
 _FONT_EXTENSIONS = {".ttf", ".otf", ".ttc", ".otc"}
 
 _ITALIC_SELECTION_BIT = 0x01
+_ITALIC_MAC_STYLE_BIT = 0x02
+_ITALIC_ANGLE_EPSILON = 0.01  # degrees
 
 
 @dataclass(frozen=True)
@@ -122,6 +124,19 @@ def _pick_cell_advance(
     return 0
 
 
+def _is_italic(os2: Any, head: Any, post: Any) -> bool:
+    """Judge slant from every place a font may record it.
+
+    Obliques often set only ``post.italicAngle`` or the ``head`` mac style bit, not the
+    ``OS/2`` selection bit, so any of the three counts.
+    """
+    return (
+        bool(int(os2.fsSelection) & _ITALIC_SELECTION_BIT)
+        or bool(int(head.macStyle) & _ITALIC_MAC_STYLE_BIT)
+        or abs(float(post.italicAngle)) > _ITALIC_ANGLE_EPSILON
+    )
+
+
 def _parse_font(path: Path) -> FontInfo:
     """Read the font tables and build the :class:`FontInfo`; may raise."""
     font = TTFont(path, fontNumber=0)
@@ -140,7 +155,7 @@ def _parse_font(path: Path) -> FontInfo:
                 style=_name(font, 17, 2),
                 weight=int(os2.usWeightClass),
                 width=int(os2.usWidthClass),
-                italic=bool(int(os2.fsSelection) & _ITALIC_SELECTION_BIT),
+                italic=_is_italic(os2, head, post),
             ),
             metrics=FontMetrics(
                 units_per_em=int(head.unitsPerEm),

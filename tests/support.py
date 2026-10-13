@@ -18,6 +18,8 @@ class NameSpec:
     style: str = "Regular"
     weight: int = 400
     italic: bool = False
+    #: an oblique that only sets post.italicAngle, not the italic selection bit
+    angle_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,7 +56,8 @@ def build_font(path: Path, *, codepoints: list[int], spec: FontSpec | None = Non
     builder.setupHorizontalHeader(ascent=metrics.ascent, descent=metrics.descent)
     builder.setupNameTable({"familyName": names_spec.family, "styleName": names_spec.style})
     builder.setupOS2(usWeightClass=names_spec.weight, usWidthClass=5)
-    builder.setupPost(isFixedPitch=1 if metrics.fixed else 0)
+    builder.setupPost(isFixedPitch=1 if metrics.fixed else 0,
+                      italicAngle=-12.0 if names_spec.angle_only else 0.0)
     builder.setupMaxp()
     if names_spec.italic:
         # fontTools fills table attributes at decompile time; the stubs lack them.

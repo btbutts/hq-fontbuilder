@@ -16,6 +16,14 @@
 export interface LayoutCell {
 	codepoint: number;
 	present: boolean;
+	/** CSS font family to draw this cell with, when it differs from the grid's */
+	fontFamily?: string;
+	/** colour that marks the family the glyph comes from */
+	accent?: string;
+	/** the glyph was pinned to its family by the user, over the inheritance order */
+	pinned?: boolean;
+	/** how many families could draw this glyph; above 1 the cell can be clicked to choose */
+	alternatives?: number;
 }
 
 export interface LayoutRow {
@@ -33,6 +41,20 @@ export interface CellGeometry {
 	cellW: number;
 	cellH: number;
 	ascent: number;
+}
+
+/** The cell of the base family (or a plausible default) as a geometry at `emPx`. */
+export function geometryFor(
+	base: { cellAdvance: number; unitsPerEm: number; ascent: number; descent: number } | null,
+	emPx: number
+): CellGeometry {
+	if (!base) return { emPx, cellW: 0.6, cellH: 1.2, ascent: 0.93 };
+	return {
+		emPx,
+		cellW: base.cellAdvance / base.unitsPerEm,
+		cellH: (base.ascent - base.descent) / base.unitsPerEm,
+		ascent: base.ascent / base.unitsPerEm
+	};
 }
 
 // The code label ("U+0030", 10px mono) is wider than a narrow cell, so every glyph gets a

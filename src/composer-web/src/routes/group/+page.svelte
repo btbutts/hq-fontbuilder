@@ -3,7 +3,7 @@
 	import { fetchGlyphs, postChoose, type GlyphsPayload, type GroupInfo } from '#lib/api.js';
 	import { consoleStore } from '#lib/console.svelte.js';
 	import GlyphGrid from '#lib/GlyphGrid.svelte';
-	import type { CellGeometry, LayoutMode } from '#lib/glyphLayout.js';
+	import { geometryFor, type LayoutMode } from '#lib/glyphLayout.js';
 
 	const GLYPH_EM_PX = 64;
 	const WRAP_STORAGE_KEY = 'fc-glyph-wrap';
@@ -20,20 +20,11 @@
 	const group = $derived(snapshot?.groups.find((entry) => entry.id === groupId));
 	const family = $derived(snapshot?.families.find((entry) => entry.label === familyLabel));
 
-	const chosen = $derived(snapshot?.choices[groupId] ?? null);
+	const order = $derived(snapshot?.choices[groupId] ?? []);
+	const position = $derived(order.indexOf(familyLabel));
 	const base = $derived(snapshot?.base ?? null);
 
-	// Cell geometry as em ratios of the base family's cell; defaults match the
-	// historical page when no base family is configured.
-	const cellW = $derived(base ? base.cellAdvance / base.unitsPerEm : 0.6);
-	const cellH = $derived(base ? (base.ascent - base.descent) / base.unitsPerEm : 1.2);
-	const ascentRatio = $derived(base ? base.ascent / base.unitsPerEm : 0.93);
-	const geometry = $derived<CellGeometry>({
-		emPx: GLYPH_EM_PX,
-		cellW,
-		cellH,
-		ascent: ascentRatio
-	});
+	const geometry = $derived(geometryFor(base, GLYPH_EM_PX));
 
 	// Rows (stacked, scrolls sideways) is the default; the toggle brings back the single
 	// wrapping run. The choice is remembered by the browser, never by the server.
@@ -152,19 +143,19 @@
 
 	let chooseError = $state<string | null>(null);
 
-	async function choose(familyToChoose: string | null): Promise<void> {
-		const result = await postChoose(groupId, familyToChoose);
+	async function change(action: 'add' | 'remove' | 'clear'): Promise<void> {
+		const result = await postChoose(groupId, action, action === 'clear' ? null : familyLabel);
 		chooseError = result.ok ? null : (result.error ?? 'unknown error');
 		await consoleStore.refresh();
 	}
 
 	const chooseStatus = $derived(
 		chooseError ??
-			(chosen === null
-				? 'no family chosen for this group'
-				: chosen === familyLabel
-					? 'this family is the chosen source'
-					: `currently sourced from ${chosen} — choosing here replaces it`)
+			(order.length === 0
+				? 'no family is chosen for this group yet'
+				: position >= 0
+					? `number ${position + 1} of ${order.length} in the inheritance order: ${order.join(', ')}`
+					: `not used here; choosing it makes it number ${order.length + 1} after ${order.join(', ')}`)
 	);
 </script>
 
@@ -183,7 +174,8 @@
 	<p class="mt-0 max-w-5xl text-[#555]">
 		{group.label}; {group.total} code points; cell of base family
 		{base ? base.family : '(none configured)'}. Coverage shown for the family is that of its
-		reference style (the upright cut nearest Regular).
+		reference style (the upright cut nearest Regular). Families are used in the order they are
+		chosen: a glyph comes from the first one that has it, the later ones fill in the rest.
 	</p>
 	{#if snapshot.uneven[family.label]?.includes(group.id)}
 		<p class="mt-0 max-w-5xl text-[#9c7c00]">
@@ -197,17 +189,27 @@
 	>
 		<label class="mr-6 cursor-pointer">
 			<input
-				type="radio"
-				name="choose"
-				checked={chosen === familyLabel}
-				onchange={() => choose(familyLabel)}
+				type="checkbox"
+				checked={position >= 0}
+				onchange={(event) => change(event.currentTarget.checked ? 'add' : 'remove')}
 			/>
 			use this family for this group
 		</label>
-		<label class="mr-6 cursor-pointer">
-			<input type="radio" name="choose" checked={chosen === null} onchange={() => choose(null)} />
-			no source chosen
-		</label>
+		{#if order.length > 0}
+			<a
+				class="mr-6 text-[#1b4965] underline"
+				href="/compose?{new URLSearchParams({ group: groupId })}"
+				title="the glyphs of this group as combined from the chosen families"
+				>combined result →</a
+			>
+			<button
+				type="button"
+				class="mr-6 cursor-pointer rounded border border-[#b9b9bd] bg-white px-2 py-0.5 text-[0.9em]"
+				onclick={() => change('clear')}
+			>
+				clear all families
+			</button>
+		{/if}
 		<span class="text-[0.9em]" class:text-[#1b4965]={!chooseError} class:text-[#b02e2e]={!!chooseError}>
 			{chooseStatus}
 		</span>

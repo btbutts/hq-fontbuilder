@@ -7,9 +7,15 @@
 		/** false when the font has no glyph for the code point: nothing is drawn */
 		present: boolean;
 		geometry: CellGeometry;
+		/** colour of the family the glyph is taken from; drawn as a bar under the cell */
+		accent?: string;
+		/** pinned by the user over the inheritance order (filled dot) */
+		pinned?: boolean;
+		/** more than one family could draw it (ring), so the cell can be clicked */
+		choosable?: boolean;
 	}
 
-	let { codepoint, fontFamily, present, geometry }: Props = $props();
+	let { codepoint, fontFamily, present, geometry, accent, pinned, choosable }: Props = $props();
 
 	const width = $derived(Math.round(geometry.cellW * geometry.emPx));
 	const height = $derived(Math.round(geometry.cellH * geometry.emPx));
@@ -65,7 +71,24 @@
 			stroke-dasharray="3 2"
 		/>
 		<rect x="0.5" y="0.5" width={width - 1} height={height - 1} fill="none" stroke="#b9b9bd" />
+		{#if pinned}
+			<circle cx={width - 6} cy="6" r="3.5" fill={accent ?? '#1b4965'} />
+		{:else if choosable}
+			<circle
+				cx={width - 6}
+				cy="6"
+				r="3"
+				fill="white"
+				stroke={accent ?? '#1b4965'}
+				stroke-width="1.5"
+			/>
+		{/if}
 	</svg>
+	<span
+		class="mt-0.5 h-[3px] rounded-sm"
+		style:width="{width}px"
+		style:background={accent ?? 'transparent'}
+	></span>
 	<span class="mt-1 font-mono text-[10px] leading-none whitespace-nowrap text-[#777]"
 		>U+{codepoint.toString(16).toUpperCase().padStart(4, '0')}</span
 	>

@@ -9,9 +9,20 @@ Routes:
   of the configuration file).
 * ``GET /api/glyphs?family=F&group=G`` — for each style file of a family, the code
   points of the group it holds (the group page draws only those).
-* ``POST /api/choose`` ``{group, family|null}`` — record a choice, save the
-  configuration and bump the version. The body must be sent as ``application/json``:
-  a cross-site page cannot do that without a CORS preflight, which is refused.
+* ``GET /api/composition?group=G`` — the group resolved through its inheritance
+  order and the glyph overrides: for every code point some family has, its source and
+  the other families that could serve it.
+* ``POST /api/choose`` ``{group, action, family}`` — add a family to the end of the
+  group's inheritance order, remove it, move it up or down, or clear the group
+  (``action``: add, remove, up, down, clear).
+* ``POST /api/glyph`` ``{codepoint, family|null}`` — serve one code point from one of
+  the group's families, or (null) go back to the inheritance order.
+* ``POST /api/style`` ``{style, family, file|null}`` — map an output style of a family
+  to one of its style files, or (null) back to the default rules.
+
+  Every POST saves the configuration and bumps the version, and its body must be sent
+  as ``application/json``: a cross-site page cannot do that without a CORS preflight,
+  which is refused.
 * ``GET /fonts/<family>/<filename>`` — raw font bytes for ``@font-face``, guarded
   against path traversal: only files directly inside a family folder of the scanned
   fonts directory are served.
@@ -157,37 +168,73 @@ class _Handler(BaseHTTPRequestHandler):
             status, payload = self._state.glyphs(
                 query.get("family", [""])[0], query.get("group", [""])[0])
             self._send_json(payload, status=status)
+        elif path == "/api/composition":
+            status, payload = self._state.composition(
+                parse_qs(parsed.query).get("group", [""])[0])
+            self._send_json(payload, status=status)
         elif path.startswith("/fonts/"):
             self._get_font(path.removeprefix("/fonts/"))
         else:
             self._get_static(path)
 
-    def _route_post(self) -> None:
-        """Dispatch POST requests (only ``/api/choose`` exists)."""
-        path = urlparse(self.path).path
-        if path != "/api/choose":
-            self._send_json({"error": f"not found: {path}"}, status=404)
-            return
+    def _read_json_body(self) -> dict[str, Any] | None:
+        """Read the request body as a JSON object; answer the error and return None if not."""
         content_type = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
         if content_type != "application/json":
             self._send_json({"error": "Content-Type must be application/json"}, status=415)
-            return
+            return None
         try:
             length = int(self.headers.get("Content-Length", "0"))
             body = json.loads(self.rfile.read(length) or b"{}")
         except ValueError:
             self._send_json({"error": "invalid JSON body"}, status=400)
+            return None
+        if not isinstance(body, dict):
+            self._send_json({"error": "body must be a JSON object"}, status=400)
+            return None
+        return body
+
+    def _route_post(self) -> None:
+        """Dispatch POST requests: choose, glyph and style (all JSON, all state changes)."""
+        path = urlparse(self.path).path
+        handlers = {"/api/choose": self._post_choose, "/api/glyph": self._post_glyph,
+                    "/api/style": self._post_style}
+        handler = handlers.get(path)
+        if handler is None:
+            self._send_json({"error": f"not found: {path}"}, status=404)
             return
-        if not isinstance(body, dict) or not isinstance(body.get("group"), str):
-            self._send_json({"error": "body must be {group: str, family: str|null}"},
-                            status=400)
+        body = self._read_json_body()
+        if body is None:
             return
-        family = body.get("family")
-        if family is not None and not isinstance(family, str):
-            self._send_json({"error": "family must be a string or null"}, status=400)
-            return
-        status, payload = self._state.choose(body["group"], family)
+        status, payload = handler(body)
         self._send_json(payload, status=status)
+
+    def _post_choose(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """``{group, action, family}``: add, remove, move or clear a family of a group."""
+        group, action, family = body.get("group"), body.get("action"), body.get("family")
+        if not isinstance(group, str) or not isinstance(action, str):
+            return 400, {"error": "body must be {group: str, action: str, family: str}"}
+        if family is not None and not isinstance(family, str):
+            return 400, {"error": "family must be a string"}
+        return self._state.choose(group, family, action)
+
+    def _post_glyph(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """``{codepoint, family|null}``: pin a code point to a family or release it."""
+        codepoint, family = body.get("codepoint"), body.get("family")
+        if not isinstance(codepoint, int) or isinstance(codepoint, bool):
+            return 400, {"error": "codepoint must be an integer"}
+        if family is not None and not isinstance(family, str):
+            return 400, {"error": "family must be a string or null"}
+        return self._state.set_glyph(codepoint, family)
+
+    def _post_style(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """``{style, family, file|null}``: map an output style of a family to a file."""
+        style, family, file_name = body.get("style"), body.get("family"), body.get("file")
+        if not isinstance(style, str) or not isinstance(family, str):
+            return 400, {"error": "body must be {style: str, family: str, file: str|null}"}
+        if file_name is not None and not isinstance(file_name, str):
+            return 400, {"error": "file must be a string or null"}
+        return self._state.set_style(style, family, file_name)
 
     def _get_static(self, path: str) -> None:
         """Serve a static file by URL path, falling back to ``index.html``.

@@ -36,6 +36,15 @@ def test_italic_and_proportional_flags(tmp_path: Path) -> None:
     assert not result.metrics.is_fixed_pitch
 
 
+def test_an_oblique_that_only_sets_the_italic_angle_is_italic(tmp_path: Path) -> None:
+    """Count post.italicAngle as slant, as obliques often set nothing else."""
+    spec = FontSpec(names=NameSpec(angle_only=True))
+    path = build_font(tmp_path / "oblique.ttf", codepoints=[0x41], spec=spec)
+    result = read_font(path)
+    assert isinstance(result, FontInfo)
+    assert result.names.italic
+
+
 def test_cell_advance_falls_back_to_modal(tmp_path: Path) -> None:
     """Use the modal advance when the font has no ``M`` glyph."""
     spec = FontSpec(metrics=MetricSpec(advance=500))

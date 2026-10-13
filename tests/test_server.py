@@ -91,18 +91,18 @@ def test_state_and_version(client: _Client) -> None:
 
 def test_choose_requires_a_json_content_type(client: _Client) -> None:
     """Refuse the body a cross-site form post could send without a preflight."""
-    body = {"group": "arrows", "family": "Alpha"}
+    body = {"group": "arrows", "family": "Alpha", "action": "add"}
     status, payload = client.json("POST", "/api/choose", body, content_type="text/plain")
     assert status == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
     assert "error" in payload
     status, payload = client.json("POST", "/api/choose", body)
     assert status == HTTPStatus.OK
-    assert payload["choices"] == {"arrows": "Alpha"}
+    assert payload["choices"] == {"arrows": ["Alpha"]}
 
 
 def test_choose_rejects_a_malformed_body(client: _Client) -> None:
     """Answer 400 for JSON that is not {group, family}."""
-    for body in ({"family": "Alpha"}, {"group": "arrows", "family": 3}):
+    for body in ({"family": "Alpha"}, {"group": "arrows", "action": "add", "family": 3}):
         assert client.json("POST", "/api/choose", body)[0] == HTTPStatus.BAD_REQUEST
 
 
@@ -133,3 +133,26 @@ def test_static_fallback_is_for_routes_not_for_missing_assets(client: _Client) -
     assert (status, data) == (HTTPStatus.OK, b"<p>index</p>")
     assert client.request("GET", "/_app/immutable/missing.js")[0] == HTTPStatus.NOT_FOUND
     assert client.request("GET", "/%2e%2e/%2e%2e/etc/passwd")[0] == HTTPStatus.BAD_REQUEST
+
+
+def test_composition_glyph_and_style_routes(client: _Client) -> None:
+    """Resolve a group, pin a glyph, map a style: the three inheritance routes."""
+    for label in ("Alpha", "Beta"):
+        body = {"group": "arrows", "family": label, "action": "add"}
+        assert client.json("POST", "/api/choose", body)[0] == HTTPStatus.OK
+    status, composition = client.json("GET", "/api/composition?group=arrows")
+    assert status == HTTPStatus.OK
+    assert composition["order"] == ["Alpha", "Beta"]
+    glyph = composition["glyphs"][0]
+    assert (glyph["source"], glyph["candidates"]) == ("Alpha", ["Alpha", "Beta"])
+    status, pinned = client.json("POST", "/api/glyph", {"codepoint": 0x2190, "family": "Beta"})
+    assert status == HTTPStatus.OK
+    assert pinned["glyphs"][0]["source"] == "Beta"
+    assert pinned["glyphs"][0]["overridden"]
+    bad = client.json("POST", "/api/glyph", {"codepoint": "x", "family": None})
+    assert bad[0] == HTTPStatus.BAD_REQUEST
+    style = {"style": "Bold", "family": "Alpha", "file": "Alpha-Regular.ttf"}
+    status, state = client.json("POST", "/api/style", style)
+    assert status == HTTPStatus.OK
+    assert state["styleMap"]["entries"]["Bold"]["Alpha"]["overridden"]
+    assert client.json("GET", "/api/composition?group=nonsense")[0] == HTTPStatus.BAD_REQUEST
