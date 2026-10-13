@@ -1,0 +1,28 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Setup build environment",
+            "detail": "Create .fontbuilder.venv, install requirements.txt into it, and compile the web console SPA when it has not been built yet. Idempotent, so it runs automatically every time the folder opens.",
+            "type": "shell",
+            "command": "./setup-build-env.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "runOptions": {
+                "runOn": "folderOpen"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Compile web console SPA",
+            "detail": "npm install + npm run build of src/composer-web into font_composer/composer/web/static/. Run this after editing the web console source.",
+            "type": "shell",
+            "command": "./compile-spa.sh",
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

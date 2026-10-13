@@ -50,12 +50,16 @@ and the Nerd Fonts builds of Fira Mono and Inconsolata, each in the plain and th
 
 ## _Quick start_
 
-Requires Python 3.12+. Set up the environment once:
+Requires Python 3.12+ and node/npm. One script sets up everything on a fresh clone
+(the Python virtualenv with `requirements.txt`, and the compiled web console):
 
 ```sh
-python3 -m venv .fontbuilder.venv
-.fontbuilder.venv/bin/pip install fonttools pytest ruff pylint pyright
+./setup-build-env.sh
 ```
+
+It is idempotent — re-running it only does what is missing. The two steps are also
+available on their own: `./compile-spa.sh` recompiles just the web console (run it
+after editing anything in `src/composer-web/`).
 
 Inspect a font (metadata, fixed-width judgement, per-group coverage):
 
@@ -119,30 +123,46 @@ arrows = "DejaVu"
 ### _Web console source_
 
 The console served by `compose` is a SvelteKit + TypeScript + TailwindCSS single-page
-app whose source lives in `src/composer-web/` (requires Node/npm):
+app whose source lives in `src/composer-web/` (requires Node/npm). Compile it with:
 
 ```sh
-cd src/composer-web
-npm install          # once after cloning, then when package.json changes
-npm run build        # compiles into font_composer/composer/web/static/
-npm run check        # svelte-check (TypeScript strict)
+./compile-spa.sh     # npm install + build, into font_composer/composer/web/static/
 ```
+
+or, from inside `src/composer-web/`, `npm run build` directly (`npm run check` runs
+svelte-check, TypeScript strict).
 
 **Python owns the webserver.** `python -m font_composer compose` is the only process
 you run: it watches the fonts directory, serves the JSON API and font files, and hosts
-the compiled SPA — no npm/vite process is needed at runtime. `npm run build` must
-simply have run at least once on this checkout (and again after any web source edit);
-until it has, page requests get a 503 explaining how to compile.
+the compiled SPA — no npm/vite process is needed at runtime. The SPA must simply have
+been compiled once on this checkout (and again after any web source edit); until it
+has, page requests get a 503 explaining how to compile.
 
 The compiled output in `font_composer/composer/web/static/` is a build artifact and
 is **not committed** — it only exists in build contexts (a development checkout, or
 the release workflow bot, which compiles the SPA and tarballs it into the release).
-`npm run build` wipes and rewrites that directory, so you choose when to recompile.
+The build wipes and rewrites that directory, so you choose when to recompile.
 
 For frontend development only, `npm run dev` gives Vite's live-reload dev server; it
 proxies `/api` and `/fonts` to the Python console (default port 8765), which must run
-alongside it. This is optional — plain `npm run build` plus the Python console is the
-normal loop.
+alongside it. This is optional — plain `./compile-spa.sh` plus the Python console is
+the normal loop.
 
-The Python server serves any unknown non-API path as `index.html`, so client-side
-routes like `/group?family=…&group=…` work on a hard refresh.
+The Python server serves any unknown non-API path as the SPA fallback `200.html`, so
+client-side routes like `/group?family=…&group=…` work on a hard refresh.
+
+## _Releases_
+
+Pushing a version tag runs `.github/workflows/release.yml` (it can also be started by
+hand from the Actions tab):
+
+```sh
+git tag -a v0.1.0 -m "hq-fontbuilder 0.1.0" && git push origin v0.1.0
+```
+
+The workflow sets up Python and Node, runs `./setup-build-env.sh` (which compiles the
+SPA on the fresh checkout), runs the tests and svelte-check, then builds
+`hq-fontbuilder-<version>.tar.gz`: the tracked sources listed in
+`.github/release-files.txt` plus the compiled web console. The tarball is smoke-tested
+(SPA present, test suite green inside it), checksummed, and published as a GitHub
+release. Tags below 1.0.0 or with a suffix such as `-rc1` become pre-releases.

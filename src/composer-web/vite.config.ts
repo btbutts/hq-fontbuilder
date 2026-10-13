@@ -19,7 +19,9 @@ export default defineConfig({
 			adapter: adapter({
 				pages: staticDir,
 				assets: staticDir,
-				fallback: 'index.html',
+				// SPA fallback for client-side routes; '200.html' (not 'index.html')
+				// so it does not overwrite the prerendered '/' page.
+				fallback: '200.html',
 				precompress: false,
 				strict: true
 			})

@@ -1,0 +1,11 @@
+# Paths from the tag that go into the release tarball (used by release.yml).
+# The compiled web console (font_composer/composer/web/static/) is not tracked;
+# the workflow compiles it with compile-spa.sh and adds it to the tarball.
+font_composer/
+src/
+tests/
+compile-spa.sh
+setup-build-env.sh
+pyproject.toml
+requirements.txt
+README.md
