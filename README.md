@@ -207,6 +207,40 @@ port = 8710
 one). TOML was kept for the file: it has ordered arrays, comments and inline tables, and
 the console and a human edit the same file.
 
+### Glyphs that do not fit the cell
+
+A donor's glyph is judged by its **ink** (the outline's bounding box) against the cell of
+the base family, `[0, advance] x [descent, ascent]`. The group and combined-result pages
+show the glyphs **fitted** by default. Turn on **Preview unfitted glyphs** to see the
+donor's originals: the cells the base cell cuts off are outlined red, and each style says
+how many. The rules are in `font_composer/common/fit.py` (pure functions, tested).
+
+Two ways of fitting, by category:
+
+* **Fitted together by category** (`text`: alnum, ascii-symbols, latin-*, greek, cyrillic;
+  `connectors`: box-drawing, block-elements). Shrinking only the glyph that offends would
+  make it smaller than its look-alikes (`ĺ` against `ľ`, one box corner against the
+  next), so one family's glyphs of a category get **one scale**, just enough for its
+  offenders, applied to all of them about a fixed anchor (the baseline for text; the
+  centre of the donor's frame for box drawing, so they keep lining up), plus the least
+  extra shift or shrink a glyph still needs. The scale has a floor (5% for text, 25% for
+  box drawing: `CLASS_FLOORS`), so that a handful of outliers, such as an accented Greek
+  capital taller than any letter, cannot make a whole alphabet visibly smaller; the
+  outliers are fitted on their own. A font that *is* the base cell keeps its box drawing.
+* **Fitted glyph by glyph** (everything else: punctuation, arrows, dingbats, math, ...,
+  whose glyphs differ in size by nature):
+
+| Class | What it is | Correction |
+|---|---|---|
+| `bleed` | past the cell by at most 0.02 em; fonts do it on purpose so neighbours show no seam | kept |
+| `frame` | a connector (box piece, powerline separator, brace or integral piece) designed to span the cell so neighbours join | the donor's frame (or cell) is fitted onto the base cell, one map per font family |
+| `oversize` | a symbol wider or taller than the cell (`↔ ⇔ ⌫ ☑ ❤`) | scaled uniformly to fit |
+| `offset` | fits in size, sits partly outside (another line box, e.g. Nerd Font icons 0.03 em under the descent) | moved the least that brings it inside |
+
+The preview is a visualisation: it draws each glyph through the plan, but where box
+drawing must also *join* its neighbours the build needs more than this (see the plan
+document, "Glyph fitting").
+
 ### How style files are matched
 
 Style *names* differ between families for what is the same style (`Oblique` and

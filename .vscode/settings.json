@@ -8,5 +8,6 @@
     ],
     "python.defaultInterpreterPath": "${workspaceFolder}/.fontbuilder.venv/bin/python",
     "pylint.interpreter": [ "${workspaceFolder}/.fontbuilder.venv/bin/python" ],
-    "typescript.tsdk": "src/composer-web/node_modules/typescript/lib"
+    "typescript.tsdk": "src/composer-web/node_modules/typescript/lib",
+    "tailwindCSS.lint.suggestCanonicalClasses": "ignore"
 }

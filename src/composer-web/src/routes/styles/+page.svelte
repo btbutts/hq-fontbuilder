@@ -65,7 +65,7 @@
 						{@const entry = map.entries[style]?.[family]}
 						<td class="border border-[#b9b9bd] px-3 py-1 align-top">
 							<select
-								class="max-w-[22rem] rounded border border-[#b9b9bd] bg-white px-1 py-0.5"
+								class="max-w-88 rounded border border-[#b9b9bd] bg-white px-1 py-0.5"
 								value={entry?.overridden ? entry.file : ''}
 								onchange={(event) => choose(style, family, event.currentTarget.value)}
 							>
@@ -79,7 +79,7 @@
 								{/each}
 							</select>
 							<div
-								class="mt-0.5 max-w-[22rem] text-[0.8em] {entry?.file
+								class="mt-0.5 max-w-88 text-[0.8em] {entry?.file
 									? 'text-[#777]'
 									: 'text-[#b02e2e]'}"
 							>

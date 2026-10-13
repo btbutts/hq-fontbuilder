@@ -13,6 +13,16 @@
  * Pure functions, no DOM: `glyphLayout.test.ts` exercises them with `node --test`.
  */
 
+import type { FitInfo } from './api';
+
+/**
+ * A group up to this size is drawn whole, absent code points as hatched cells. A larger
+ * one (Nerd Font private use is ~72,000 code points) would be hundreds of thousands of
+ * DOM nodes, so only the glyphs a style holds are drawn, a page at a time.
+ */
+export const FULL_GRID_MAX = 512;
+export const PAGE_SIZE = 256;
+
 export interface LayoutCell {
 	codepoint: number;
 	present: boolean;
@@ -24,6 +34,8 @@ export interface LayoutCell {
 	pinned?: boolean;
 	/** how many families could draw this glyph; above 1 the cell can be clicked to choose */
 	alternatives?: number;
+	/** how the glyph relates to the base cell (absent when it simply fits) */
+	fit?: FitInfo;
 }
 
 export interface LayoutRow {

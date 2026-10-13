@@ -1,18 +1,23 @@
 <script lang="ts">
 	import { page } from '$app/state';
-	import { fetchGlyphs, postChoose, type GlyphsPayload, type GroupInfo } from '#lib/api.js';
+	import {
+		fetchGlyphs,
+		postChoose,
+		type FitInfo,
+		type GlyphsPayload,
+		type GroupInfo
+	} from '#lib/api.js';
 	import { consoleStore } from '#lib/console.svelte.js';
+	import { installFontFaces } from '#lib/families.js';
+	import { clippedCount } from '#lib/fitDisplay.js';
 	import GlyphGrid from '#lib/GlyphGrid.svelte';
-	import { geometryFor, type LayoutMode } from '#lib/glyphLayout.js';
+	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE } from '#lib/glyphLayout.js';
+	import Toggle from '#lib/Toggle.svelte';
+	import ViewToggles from '#lib/ViewToggles.svelte';
+	import { viewOptions } from '#lib/viewOptions.svelte.js';
 
 	const GLYPH_EM_PX = 64;
-	const WRAP_STORAGE_KEY = 'fc-glyph-wrap';
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';
-	// A group up to this size is drawn whole, absent code points as hatched cells. A larger
-	// one (Nerd Font private use is ~72,000 code points) would be hundreds of thousands of
-	// DOM nodes, so only the glyphs a style holds are drawn, a page at a time.
-	const FULL_GRID_MAX = 512;
-	const PAGE_SIZE = 256;
 
 	const familyLabel = $derived(page.url.searchParams.get('family') ?? '');
 	const groupId = $derived(page.url.searchParams.get('group') ?? '');
@@ -26,32 +31,11 @@
 
 	const geometry = $derived(geometryFor(base, GLYPH_EM_PX));
 
-	// Rows (stacked, scrolls sideways) is the default; the toggle brings back the single
-	// wrapping run. The choice is remembered by the browser, never by the server.
-	function readWrapPreference(): boolean {
-		try {
-			return localStorage.getItem(WRAP_STORAGE_KEY) === '1';
-		} catch {
-			return false;
-		}
+	const layoutMode = $derived(viewOptions.layoutMode(group?.total ?? 0));
+
+	function clippedIn(file: string): number {
+		return clippedCount(Object.values(currentGlyphs?.fit[file] ?? {}));
 	}
-
-	let wrapGlyphs = $state(readWrapPreference());
-
-	function setWrapGlyphs(enabled: boolean): void {
-		wrapGlyphs = enabled;
-		try {
-			localStorage.setItem(WRAP_STORAGE_KEY, enabled ? '1' : '0');
-		} catch {
-			// private window or blocked storage: the choice just lasts for this page
-		}
-	}
-
-	// A group too large to draw whole (private use) is a sparse list of the glyphs a style
-	// holds; rows of 16 would be mostly holes, so it always wraps.
-	const layoutMode = $derived<LayoutMode>(
-		wrapGlyphs || (group !== undefined && group.total > FULL_GRID_MAX) ? 'wrap' : 'rows'
-	);
 
 	const fontFaceCss = $derived(
 		family
@@ -67,13 +51,7 @@
 	);
 
 	$effect(() => {
-		let styleEl = document.getElementById(FONT_FACE_ELEMENT_ID);
-		if (!styleEl) {
-			styleEl = document.createElement('style');
-			styleEl.id = FONT_FACE_ELEMENT_ID;
-			document.head.appendChild(styleEl);
-		}
-		styleEl.textContent = fontFaceCss;
+		installFontFaces(FONT_FACE_ELEMENT_ID, fontFaceCss);
 	});
 
 	// What each style file holds of this group; refetched when the library changes.
@@ -109,6 +87,7 @@
 	interface Cell {
 		codepoint: number;
 		present: boolean;
+		fit?: FitInfo;
 	}
 
 	function held(file: string): number[] {
@@ -117,16 +96,18 @@
 
 	function visibleCells(file: string, target: GroupInfo): Cell[] {
 		const heldPoints = held(file);
+		const fits = currentGlyphs?.fit[file] ?? {};
 		if (target.total <= FULL_GRID_MAX) {
 			const have = new Set(heldPoints);
 			return groupCodepoints(target).map((codepoint) => ({
 				codepoint,
-				present: have.has(codepoint)
+				present: have.has(codepoint),
+				fit: fits[codepoint]
 			}));
 		}
 		return heldPoints
 			.slice(0, shownLimits[file] ?? PAGE_SIZE)
-			.map((codepoint) => ({ codepoint, present: true }));
+			.map((codepoint) => ({ codepoint, present: true, fit: fits[codepoint] }));
 	}
 
 	function showMore(file: string): void {
@@ -187,14 +168,13 @@
 	<div
 		class="sticky top-0 z-10 flex flex-wrap items-center gap-y-1 border-b border-[#b9b9bd] bg-[#fafafa] py-2.5"
 	>
-		<label class="mr-6 cursor-pointer">
-			<input
-				type="checkbox"
+		<span class="mr-6">
+			<Toggle
+				label="use this family for this group"
 				checked={position >= 0}
-				onchange={(event) => change(event.currentTarget.checked ? 'add' : 'remove')}
+				onchange={(enabled) => change(enabled ? 'add' : 'remove')}
 			/>
-			use this family for this group
-		</label>
+		</span>
 		{#if order.length > 0}
 			<a
 				class="mr-6 text-[#1b4965] underline"
@@ -213,22 +193,9 @@
 		<span class="text-[0.9em]" class:text-[#1b4965]={!chooseError} class:text-[#b02e2e]={!!chooseError}>
 			{chooseStatus}
 		</span>
-		<label
-			class="ml-auto cursor-pointer pl-6 {group.total > FULL_GRID_MAX
-				? 'cursor-not-allowed text-[#999]'
-				: ''}"
-			title={group.total > FULL_GRID_MAX
-				? 'this group is always shown as a wrapping run'
-				: 'one wrapping run of cells instead of stacked rows'}
-		>
-			<input
-				type="checkbox"
-				checked={layoutMode === 'wrap'}
-				disabled={group.total > FULL_GRID_MAX}
-				onchange={(event) => setWrapGlyphs(event.currentTarget.checked)}
-			/>
-			Enable glyph wrapping
-		</label>
+		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
+			<ViewToggles groupTotal={group.total} />
+		</span>
 	</div>
 
 	<!-- All the styles scroll sideways together, so a column stays comparable across them. -->
@@ -243,7 +210,11 @@
 					weight {style.weight}, {style.italic ? 'italic' : 'upright'}, upm {style.unitsPerEm},
 					ascent {style.ascent}, descent {style.descent}, cell advance {style.cellAdvance};
 					group coverage {present}/{total}{#if group.total > FULL_GRID_MAX}; only the glyphs
-						this style holds are drawn{/if}
+						this style holds are drawn{/if}{#if viewOptions.unfitted && clippedIn(style.file) > 0}; <span
+							class="font-semibold text-[#c62828]"
+							>{clippedIn(style.file)} glyph{clippedIn(style.file) === 1 ? '' : 's'} cut off
+							by the base cell (red outline)</span
+						>{/if}
 				</p>
 			</div>
 			<div class="mt-2 mb-10">
@@ -260,6 +231,7 @@
 							mode={layoutMode}
 							fontFamily="fc-style-{index}"
 							{geometry}
+							showFitted={viewOptions.showFitted}
 						/>
 					{/if}
 				{/if}

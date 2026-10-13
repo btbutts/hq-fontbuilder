@@ -1,4 +1,5 @@
 <script lang="ts">
+	import type { FitInfo } from './api';
 	import { slotWidth, type CellGeometry } from './glyphLayout';
 
 	interface Props {
@@ -13,14 +14,41 @@
 		pinned?: boolean;
 		/** more than one family could draw it (ring), so the cell can be clicked */
 		choosable?: boolean;
+		/** how the glyph relates to the base cell; ink that is cut off outlines the cell red */
+		fit?: FitInfo;
+		/** draw the glyph as it will be fitted (the correction applied) */
+		showFitted?: boolean;
 	}
 
-	let { codepoint, fontFamily, present, geometry, accent, pinned, choosable }: Props = $props();
+	let {
+		codepoint,
+		fontFamily,
+		present,
+		geometry,
+		accent,
+		pinned,
+		choosable,
+		fit,
+		showFitted = false
+	}: Props = $props();
 
 	const width = $derived(Math.round(geometry.cellW * geometry.emPx));
 	const height = $derived(Math.round(geometry.cellH * geometry.emPx));
 	const baseline = $derived(geometry.ascent * geometry.emPx);
 	const slot = $derived(slotWidth(geometry));
+	const clipped = $derived(fit?.clipped === true);
+	// x' = sx*x + dx, y' = sy*y + dy (em, y up) as an SVG matrix about the text origin
+	const matrix = $derived(
+		showFitted && fit
+			? `matrix(${fit.sx} 0 0 ${fit.sy} ${fit.dx * geometry.emPx} ${(1 - fit.sy) * baseline - fit.dy * geometry.emPx})`
+			: undefined
+	);
+	const note = $derived(
+		fit
+			? `${fit.clipped ? 'cut off by the cell' : 'adjusted'}: ${fit.kind}, ` +
+					`${fit.overflow.toFixed(2)} em outside; fit x${fit.sx.toFixed(2)} y${fit.sy.toFixed(2)}`
+			: ''
+	);
 </script>
 
 <!--
@@ -38,7 +66,7 @@
 <div
 	class="flex shrink-0 flex-col items-center"
 	style:width="{slot}px"
-	title={present ? undefined : 'no glyph in this font'}
+	title={present ? (fit ? note : undefined) : 'no glyph in this font'}
 >
 	<svg
 		{width}
@@ -57,6 +85,7 @@
 				font-family={fontFamily}
 				font-size={geometry.emPx}
 				fill="#1c1c1e"
+				transform={matrix}
 				style="font-variant-ligatures: none; font-kerning: none"
 				>{String.fromCodePoint(codepoint)}</text
 			>
@@ -70,7 +99,15 @@
 			stroke-width="1"
 			stroke-dasharray="3 2"
 		/>
-		<rect x="0.5" y="0.5" width={width - 1} height={height - 1} fill="none" stroke="#b9b9bd" />
+		<rect
+			x="0.5"
+			y="0.5"
+			width={width - 1}
+			height={height - 1}
+			fill="none"
+			stroke={clipped && !showFitted ? '#c62828' : '#b9b9bd'}
+			stroke-width={clipped && !showFitted ? 2 : 1}
+		/>
 		{#if pinned}
 			<circle cx={width - 6} cy="6" r="3.5" fill={accent ?? '#1b4965'} />
 		{:else if choosable}
@@ -85,7 +122,7 @@
 		{/if}
 	</svg>
 	<span
-		class="mt-0.5 h-[3px] rounded-sm"
+		class="mt-0.5 h-0.75 rounded-sm"
 		style:width="{width}px"
 		style:background={accent ?? 'transparent'}
 	></span>

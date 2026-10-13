@@ -64,7 +64,7 @@
 						>
 							<a
 								href={groupHref(family.label, group.id)}
-								class="block px-2 py-1 outline-2 outline-offset-[-2px] outline-transparent hover:outline-[#1b4965] focus-visible:outline-[#1b4965]"
+								class="block px-2 py-1 outline-2 outline-offset-2 outline-transparent hover:outline-[#1b4965] focus-visible:outline-[#1b4965]"
 								title="{family.label} — {group.label}{position >= 0 ? ` (number ${position + 1} in the inheritance order)` : ''}{uneven ? ' (styles differ)' : ''}"
 							>
 								{present}/{total}{uneven ? ' ≠' : ''}{#if position >= 0}<sup class="ml-0.5 text-[0.7em] text-[#1b4965]">{position + 1}</sup>{/if}

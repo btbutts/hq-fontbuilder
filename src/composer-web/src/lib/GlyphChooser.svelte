@@ -75,7 +75,7 @@
 					{geometry}
 					accent={candidate.color}
 				/>
-				<span class="mt-1 block max-w-[120px] truncate text-[0.8em]" title={candidate.family}>
+				<span class="mt-1 block max-w-30 truncate text-[0.8em]" title={candidate.family}>
 					{candidate.rank}. {candidate.family}{candidate.family === current ? ' ✓' : ''}
 				</span>
 			</button>

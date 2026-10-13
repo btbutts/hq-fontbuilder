@@ -107,11 +107,29 @@ export interface ComposerState {
 	configError: string | null;
 }
 
+/** How a glyph relates to the base cell, and the correction that fixes it. */
+export interface FitInfo {
+	kind: 'bleed' | 'frame' | 'oversize' | 'offset';
+	/** x' = sx * x + dx and y' = sy * y + dy, in em, y up from the baseline */
+	sx: number;
+	sy: number;
+	dx: number;
+	dy: number;
+	/** how far the glyph's ink leaves the base cell, in em */
+	overflow: number;
+	/** how far it still leaves it after the correction */
+	residual: number;
+	/** true when ink is cut off by the cell (past a bleed) */
+	clipped: boolean;
+}
+
 export interface GlyphsPayload {
 	family: string;
 	group: string;
 	/** style file name -> code points of the group that the file holds */
 	styles: Record<string, number[]>;
+	/** style file name -> code point -> fit, for the glyphs that are not simply inside */
+	fit: Record<string, Record<string, FitInfo>>;
 }
 
 export interface ChooseResult {
@@ -128,6 +146,7 @@ export interface ResolvedGlyph {
 	/** every family that has the glyph, in inheritance order; only present when > 1 */
 	candidates?: string[];
 	overridden?: boolean;
+	fit?: FitInfo;
 }
 
 export interface Composition {

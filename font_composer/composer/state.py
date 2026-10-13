@@ -12,16 +12,50 @@ payload (``configError``) while the last good configuration stays in force.
 from __future__ import annotations
 
 import threading
+import unicodedata
 from pathlib import Path
 from typing import Any
 
 from font_composer.common.composition import GroupComposition, resolve_group
 from font_composer.common.config import Config, ConfigError
+from font_composer.common.fit import (
+    EPS,
+    Box,
+    CellSpec,
+    ClassFit,
+    FitPlan,
+    class_fit,
+    class_groups,
+    fit_class,
+    plan_fit,
+    plan_in_class,
+)
 from font_composer.common.groups import GROUPS, GROUPS_BY_ID, GlyphGroup
-from font_composer.common.library import Family, FontLibrary
+from font_composer.common.ink import read_ink
+from font_composer.common.library import Family, FontLibrary, StyleEntry
 from font_composer.common.styles import find_style, parse_style_name, resolve_style
 
 CHOICE_ACTIONS = ("add", "remove", "up", "down", "clear")
+
+_FIT_ALL_STYLES_MAX = 512
+
+
+def _cell_of(style: StyleEntry) -> CellSpec:
+    """Return a style file's character cell in em."""
+    metrics = style.info.metrics
+    upm = float(metrics.units_per_em) or 1.0
+    return CellSpec(metrics.cell_advance / upm, metrics.ascent / upm, metrics.descent / upm)
+
+
+def _fit_payload(plan: FitPlan) -> dict[str, Any]:
+    """Serialize a fit plan; ``clipped`` is what the user would see cut off."""
+    return {
+        "kind": plan.kind,
+        "sx": round(plan.sx, 5), "sy": round(plan.sy, 5),
+        "dx": round(plan.dx, 5), "dy": round(plan.dy, 5),
+        "overflow": round(plan.overflow, 4), "residual": round(plan.residual, 4),
+        "clipped": plan.overflow > EPS and plan.kind != "bleed",
+    }
 
 
 def coverage_matrix(library: FontLibrary) -> dict[str, dict[str, tuple[int, int]]]:
@@ -86,6 +120,9 @@ class ConsoleState:
         self.library = FontLibrary.scan(fonts_dir)
         self.config_error: str | None = None
         self._lock = threading.Lock()
+        # (file, size, mtime, group) -> (ink boxes, full-block frame): reading outlines
+        # is the slow part of judging fit, and a font file rarely changes
+        self._ink: dict[tuple[str, int, int, str], tuple[dict[int, Box], Box | None]] = {}
 
     def refresh(self) -> None:
         """Rescan the fonts directory and bump the version (the watcher callback).
@@ -204,14 +241,19 @@ class ConsoleState:
         if family is None:
             return 404, {"error": f"unknown family: {family_label!r}"}
         points = group.codepoints
-        return 200, {
-            "family": family.label,
-            "group": group.id,
-            "styles": {
-                style.file_name: [cp for cp in points if cp in style.info.codepoints]
-                for style in family.styles
-            },
+        present = {
+            style.file_name: [cp for cp in points if cp in style.info.codepoints]
+            for style in family.styles
         }
+        reference = family.regular_style()
+        fits: dict[str, dict[str, Any]] = {}
+        for style in family.styles:
+            # a group too large to draw whole is judged on the reference style only
+            if group.total > _FIT_ALL_STYLES_MAX and style is not reference:
+                continue
+            plans = self.fit_plans(family, group, style, present[style.file_name])
+            fits[style.file_name] = {str(cp): _fit_payload(plan) for cp, plan in plans.items()}
+        return 200, {"family": family.label, "group": group.id, "styles": present, "fit": fits}
 
     def choose(
         self, group_id: str, family_label: str | None, action: str,
@@ -254,6 +296,75 @@ class ConsoleState:
             return 400, {"error": f"unknown family: {family_label!r}"}
         return None
 
+    def _base_cell(self) -> CellSpec | None:
+        """Return the cell of the configured base family (None when there is none)."""
+        family = self.library.family(self.config.base_family)
+        reference = family.regular_style() if family is not None else None
+        return _cell_of(reference) if reference is not None else None
+
+    def _ink_of(
+        self, style: StyleEntry, group: GlyphGroup,
+    ) -> tuple[dict[int, Box], Box | None]:
+        """Return the ink boxes of a style file's glyphs of one group (cached)."""
+        path = style.info.path
+        try:
+            stat = path.stat()
+        except OSError:
+            return {}, None
+        key = (str(path), stat.st_size, stat.st_mtime_ns, group.id)
+        cached = self._ink.get(key)
+        if cached is None:
+            wanted = group.codepoint_set & style.info.codepoints
+            try:
+                cached = read_ink(path, wanted)
+            except (OSError, ValueError, KeyError):
+                cached = ({}, None)
+            self._ink[key] = cached
+        return cached
+
+    def _class_fit(self, family: Family, name: str, base: CellSpec) -> ClassFit | None:
+        """Find the shared scale of a family's glyphs in one category class.
+
+        It is taken from the family's reference style over every glyph the family has in
+        the class, so it does not depend on which families a group inherits from, and
+        every style of the family gets the same one.
+        """
+        reference = family.regular_style()
+        if reference is None:
+            return None
+        inks: list[Box] = []
+        frame = None
+        for group_id in class_groups(name):
+            boxes, frame = self._ink_of(reference, GROUPS_BY_ID[group_id])
+            inks.extend(boxes.values())
+        return class_fit(name, inks, _cell_of(reference), frame, base)
+
+    def fit_plans(
+        self, family: Family, group: GlyphGroup, style: StyleEntry, codepoints: list[int],
+    ) -> dict[int, FitPlan]:
+        """Plan the fit of some glyphs of one style file onto the base cell.
+
+        A glyph of a category fitted together (text, box drawing) always gets the shared
+        scale of its family; any other is returned only when it is not simply inside.
+        """
+        base = self._base_cell()
+        if base is None:
+            return {}
+        ink, frame = self._ink_of(style, group)
+        donor = _cell_of(style)
+        name = fit_class(group.id)
+        shared = self._class_fit(family, name, base) if name is not None else None
+        plans: dict[int, FitPlan] = {}
+        for codepoint in codepoints:
+            if shared is not None:
+                plans[codepoint] = plan_in_class(ink.get(codepoint), shared, base)
+                continue
+            letter = unicodedata.category(chr(codepoint))[0] in "LM"
+            plan = plan_fit(ink.get(codepoint), donor, frame, base, on_baseline=letter)
+            if plan.kind != "fits":
+                plans[codepoint] = plan
+        return plans
+
     def composition(self, group_id: str) -> tuple[int, dict[str, Any]]:
         """Resolve a group through its inheritance order and the glyph overrides."""
         group = GROUPS_BY_ID.get(group_id)
@@ -266,7 +377,25 @@ class ConsoleState:
             overrides = self.config.glyph_overrides
             version = self.version
         composition = resolve_group(group, order, library, overrides)
-        return 200, _composition_payload(group, order, library, composition, version)
+        payload = _composition_payload(group, order, library, composition, version)
+        self._add_fits(group, library, payload)
+        return 200, payload
+
+    def _add_fits(self, group: GlyphGroup, library: FontLibrary, payload: dict[str, Any]) -> None:
+        """Attach each glyph's fit plan (when it needs one) to a composition payload."""
+        by_source: dict[str, list[int]] = {}
+        for glyph in payload["glyphs"]:
+            by_source.setdefault(glyph["source"], []).append(glyph["codepoint"])
+        plans: dict[int, FitPlan] = {}
+        for label, codepoints in by_source.items():
+            family = library.family(label)
+            reference = family.regular_style() if family is not None else None
+            if family is not None and reference is not None:
+                plans.update(self.fit_plans(family, group, reference, codepoints))
+        for glyph in payload["glyphs"]:
+            plan = plans.get(glyph["codepoint"])
+            if plan is not None:
+                glyph["fit"] = _fit_payload(plan)
 
     def set_glyph(self, codepoint: int, family_label: str | None) -> tuple[int, dict[str, Any]]:
         """Pin one code point to one of its candidate families (None: back to the order)."""

@@ -15,11 +15,13 @@
 		/** font family for cells that do not carry their own */
 		fontFamily: string;
 		geometry: CellGeometry;
+		/** draw glyphs with their fit applied, where they have one */
+		showFitted?: boolean;
 		/** called with the cell and its element when a choosable cell is clicked */
 		onpick?: (cell: LayoutCell, element: HTMLElement) => void;
 	}
 
-	let { groupId, cells, mode, fontFamily, geometry, onpick }: Props = $props();
+	let { groupId, cells, mode, fontFamily, geometry, showFitted = false, onpick }: Props = $props();
 
 	const rows = $derived(layoutCells(groupId, cells, mode));
 	const slot = $derived(slotWidth(geometry));
@@ -40,6 +42,8 @@
 				{geometry}
 				accent={cell.accent}
 				pinned={cell.pinned}
+				fit={cell.fit}
+				{showFitted}
 				choosable
 			/>
 		</button>
@@ -51,6 +55,8 @@
 			{geometry}
 			accent={cell.accent}
 			pinned={cell.pinned}
+			fit={cell.fit}
+			{showFitted}
 		/>
 	{/if}
 {/snippet}

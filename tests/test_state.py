@@ -248,3 +248,30 @@ def test_glyphs_lists_only_the_present_code_points(tmp_path: Path) -> None:
                                  "Beta-Regular.ttf": [ARROW_LEFT, ARROW_UP]}
     assert state.glyphs("Nowhere", "arrows")[0] == HTTPStatus.NOT_FOUND
     assert state.glyphs("Beta", "nonsense")[0] == HTTPStatus.BAD_REQUEST
+
+
+def test_glyphs_that_leave_the_base_cell_carry_a_fit_plan(tmp_path: Path) -> None:
+    """Report clipping and its correction in both the group and the composition views."""
+    fonts = tmp_path / "fonts"
+    for label in ("Alpha", "Beta"):
+        (fonts / label).mkdir(parents=True)
+    # Alpha is the base: a 600 x 1000 cell (ascent 800, descent -200)
+    build_font(fonts / "Alpha" / "Alpha-Regular.ttf", codepoints=[ord("M"), ARROW_UP])
+    # Beta's left arrow is 800 wide in a 600 cell; its up arrow fits
+    build_font(fonts / "Beta" / "Beta-Regular.ttf", codepoints=[ord("M"), ARROW_LEFT, ARROW_UP],
+               ink={ARROW_LEFT: (-100, 100, 700, 500), ARROW_UP: (100, 0, 500, 700)})
+    path = tmp_path / "composer.toml"
+    path.write_text('[cell]\nbase = "Alpha"\n', encoding="utf-8")
+    state = ConsoleState(fonts, Config.load(path))
+    state.choose("arrows", "Beta", "add")
+    status, glyphs = state.glyphs("Beta", "arrows")
+    assert status == HTTPStatus.OK
+    plan = glyphs["fit"]["Beta-Regular.ttf"][str(ARROW_LEFT)]
+    assert plan["kind"] == "oversize"
+    assert plan["clipped"]
+    assert plan["sx"] < 1.0
+    assert str(ARROW_UP) not in glyphs["fit"]["Beta-Regular.ttf"]  # fits: nothing to say
+    status, payload = state.composition("arrows")
+    by_cp = {glyph["codepoint"]: glyph for glyph in payload["glyphs"]}
+    assert by_cp[ARROW_LEFT]["fit"]["kind"] == "oversize"
+    assert "fit" not in by_cp[ARROW_UP]

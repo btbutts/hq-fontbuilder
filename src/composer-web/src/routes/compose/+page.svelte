@@ -11,16 +11,14 @@
 	import { consoleStore } from '#lib/console.svelte.js';
 	import { familyColor, familyCssName, fontFaceRules, installFontFaces } from '#lib/families.js';
 	import GlyphChooser, { type Candidate } from '#lib/GlyphChooser.svelte';
+	import { clippedCount } from '#lib/fitDisplay.js';
 	import GlyphGrid from '#lib/GlyphGrid.svelte';
-	import { geometryFor, type LayoutCell, type LayoutMode } from '#lib/glyphLayout.js';
+	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE, type LayoutCell } from '#lib/glyphLayout.js';
+	import ViewToggles from '#lib/ViewToggles.svelte';
+	import { viewOptions } from '#lib/viewOptions.svelte.js';
 
 	const GLYPH_EM_PX = 64;
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';
-	const WRAP_STORAGE_KEY = 'fc-glyph-wrap';
-	// Same limits as the group page: a group this large (Nerd Font private use) is drawn
-	// as the list of glyphs that have a source, a page at a time.
-	const FULL_GRID_MAX = 512;
-	const PAGE_SIZE = 256;
 
 	const groupId = $derived(page.url.searchParams.get('group') ?? '');
 	const snapshot = $derived(consoleStore.state);
@@ -61,27 +59,9 @@
 		);
 	});
 
-	function readWrapPreference(): boolean {
-		try {
-			return localStorage.getItem(WRAP_STORAGE_KEY) === '1';
-		} catch {
-			return false;
-		}
-	}
-
-	let wrapGlyphs = $state(readWrapPreference());
-
-	function setWrapGlyphs(enabled: boolean): void {
-		wrapGlyphs = enabled;
-		try {
-			localStorage.setItem(WRAP_STORAGE_KEY, enabled ? '1' : '0');
-		} catch {
-			// the choice just lasts for this page
-		}
-	}
-
+	const clippedTotal = $derived(clippedCount((current?.glyphs ?? []).map((glyph) => glyph.fit)));
 	const large = $derived((group?.total ?? 0) > FULL_GRID_MAX);
-	const layoutMode = $derived<LayoutMode>(wrapGlyphs || large ? 'wrap' : 'rows');
+	const layoutMode = $derived(viewOptions.layoutMode(group?.total ?? 0));
 
 	const bySource = $derived(
 		new Map<number, ResolvedGlyph>((current?.glyphs ?? []).map((glyph) => [glyph.codepoint, glyph]))
@@ -96,7 +76,8 @@
 			fontFamily: familyCssName(index),
 			accent: familyColor(index),
 			pinned: glyph.overridden === true,
-			alternatives: glyph.candidates?.length ?? 1
+			alternatives: glyph.candidates?.length ?? 1,
+			fit: glyph.fit
 		};
 	}
 
@@ -275,21 +256,16 @@
 	>
 		<span class="text-[0.9em] text-[#555]">
 			Glyphs are drawn from each family's reference style (the upright cut nearest Regular).
+			{#if viewOptions.unfitted && clippedTotal > 0}
+				<span class="font-semibold text-[#c62828]"
+					>{clippedTotal} glyph{clippedTotal === 1 ? ' is' : 's are'} cut off by the base cell
+					(red outline).</span
+				>
+			{/if}
 		</span>
-		<label
-			class="ml-auto cursor-pointer pl-6 {large ? 'cursor-not-allowed text-[#999]' : ''}"
-			title={large
-				? 'this group is always shown as a wrapping run'
-				: 'one wrapping run of cells instead of stacked rows'}
-		>
-			<input
-				type="checkbox"
-				checked={layoutMode === 'wrap'}
-				disabled={large}
-				onchange={(event) => setWrapGlyphs(event.currentTarget.checked)}
-			/>
-			Enable glyph wrapping
-		</label>
+		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
+			<ViewToggles groupTotal={group.total} />
+		</span>
 	</div>
 
 	<div class="overflow-x-auto py-4">
@@ -302,6 +278,7 @@
 				mode={layoutMode}
 				fontFamily={familyCssName(0)}
 				{geometry}
+				showFitted={viewOptions.showFitted}
 				onpick={group.atomic ? undefined : openChooser}
 			/>
 			{#if large && current.glyphs.length > shown}
