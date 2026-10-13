@@ -5,9 +5,13 @@ label shown in the console. Every font file inside is read with
 :func:`font_composer.common.inspect.read_font`. Files that fail to read are collected
 as problem entries with their reason, never silently skipped.
 
-The coverage cell of a family is the union of the code points of all its style files;
-the per-style detail is kept for the group page. The console's coverage-matrix and
-summary assembly lives in :mod:`font_composer.composer.state`; the builder resolves
+The coverage cell of a family is the coverage of its *reference style*, the upright
+cut nearest to Regular: that is what the plan measured, and a composed font takes its
+glyphs from one style file per output style, so a union over styles would claim glyphs
+that no single file holds (an atomic group could look complete when no file has it
+all). The per-style detail is kept for the group page, and :meth:`Family.uneven_groups`
+names the groups on which the styles of a family disagree. The console's coverage-matrix
+and summary assembly lives in :mod:`font_composer.composer.state`; the builder resolves
 family labels to style files with the classes here.
 """
 
@@ -43,24 +47,35 @@ class Family:
     styles: tuple[StyleEntry, ...]
     errors: tuple[FontError, ...]
 
-    @property
-    def codepoints(self) -> frozenset[int]:
-        """The union of the code points of all the family's styles."""
-        result: set[int] = set()
-        for style in self.styles:
-            result |= style.info.codepoints
-        return frozenset(result)
+    def regular_style(self) -> StyleEntry | None:
+        """Return the reference style: the upright cut with the weight nearest Regular.
+
+        A family with only italic cuts falls back to the nearest weight among those.
+        """
+        upright = [style for style in self.styles if not style.info.names.italic]
+        candidates = upright or list(self.styles)
+        if not candidates:
+            return None
+        return min(candidates, key=lambda style: abs(style.info.names.weight - REGULAR_WEIGHT))
 
     def coverage(self, group: GlyphGroup) -> tuple[int, int]:
-        """Return the family's union coverage of one group as ``(present, total)``."""
-        return coverage(self.codepoints, group)
+        """Return the reference style's coverage of one group as ``(present, total)``."""
+        reference = self.regular_style()
+        if reference is None:
+            return 0, group.total
+        return reference.group_coverage[group.id]
 
-    def regular_style(self) -> StyleEntry | None:
-        """Return the Regular cut (weight 400, not italic), else the first style."""
-        for style in self.styles:
-            if style.info.names.weight == REGULAR_WEIGHT and not style.info.names.italic:
-                return style
-        return self.styles[0] if self.styles else None
+    def uneven_groups(self) -> frozenset[str]:
+        """Return the ids of the groups on which the styles of this family disagree.
+
+        Styles disagree when they hold different sets of the group's code points, not
+        only different numbers of them.
+        """
+        return frozenset(
+            group.id
+            for group in GROUPS
+            if len({group.codepoint_set & style.info.codepoints for style in self.styles}) > 1
+        )
 
 
 @dataclass(frozen=True)

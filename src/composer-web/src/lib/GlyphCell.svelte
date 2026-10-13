@@ -1,29 +1,72 @@
 <script lang="ts">
+	import { slotWidth, type CellGeometry } from './glyphLayout';
+
 	interface Props {
 		codepoint: number;
 		fontFamily: string;
+		/** false when the font has no glyph for the code point: nothing is drawn */
+		present: boolean;
+		geometry: CellGeometry;
 	}
 
-	let { codepoint, fontFamily }: Props = $props();
+	let { codepoint, fontFamily, present, geometry }: Props = $props();
+
+	const width = $derived(Math.round(geometry.cellW * geometry.emPx));
+	const height = $derived(Math.round(geometry.cellH * geometry.emPx));
+	const baseline = $derived(geometry.ascent * geometry.emPx);
+	const slot = $derived(slotWidth(geometry));
 </script>
 
 <!--
-	One glyph drawn at the base family's cell size. The zero-width ::before strut
-	(height = ascent, baseline-aligned) pins the baseline; the dashed red line and
-	the cell border make overflow and misalignment visible. Glyphs the font has no
-	cmap entry for render as the browser's .notdef box — itself a useful signal.
+	One glyph in the base family's cell, drawn as SVG so that the baseline is exactly
+	where it is meant to be: an SVG <text> puts its baseline at `y`, whatever the font's
+	own ascent and descent are. (The earlier HTML version let the browser's line layout
+	place the baseline, and that depends on each donor font's metrics, so glyphs of some
+	families sat well below the cell.) The cell border is the cell a console would give
+	the glyph; the dashed red line is the baseline, which is `ascent` of the base family
+	from the top. The glyph origin is the cell's left edge, as in a terminal, so a donor
+	whose advance differs from the cell visibly overflows. A code point the font has no
+	glyph for is not drawn at all (a browser would fill it from some other font on the
+	system, which would look like the donor had it) and is hatched.
 -->
-<span
-	class="relative inline-block h-[calc(var(--cell-h)*1em)] w-[calc(var(--cell-w)*1em)] overflow-visible border border-[#b9b9bd] bg-white align-top leading-[0] before:inline-block before:h-[calc(var(--ascent)*1em)] before:w-0 before:align-baseline before:content-['']"
+<div
+	class="flex shrink-0 flex-col items-center"
+	style:width="{slot}px"
+	title={present ? undefined : 'no glyph in this font'}
 >
-	<span class="align-baseline leading-[0]" style:font-family={fontFamily}
-		>{String.fromCodePoint(codepoint)}</span
+	<svg
+		{width}
+		{height}
+		viewBox="0 0 {width} {height}"
+		class="block overflow-visible {present
+			? 'bg-white'
+			: 'bg-[repeating-linear-gradient(135deg,#f3f3f6_0_4px,#e2e2e8_4px_5px)]'}"
+		role="img"
+		aria-label="U+{codepoint.toString(16).toUpperCase().padStart(4, '0')}"
 	>
-	<span
-		class="pointer-events-none absolute -right-0.5 -left-0.5 top-[calc(var(--ascent)*1em)] border-t border-dashed border-[#d24a4a]"
-	></span>
-	<span
-		class="pointer-events-none absolute left-0 top-[calc(100%_+_1px)] font-mono text-[9px] leading-normal text-[#999]"
+		{#if present}
+			<text
+				x="0"
+				y={baseline}
+				font-family={fontFamily}
+				font-size={geometry.emPx}
+				fill="#1c1c1e"
+				style="font-variant-ligatures: none; font-kerning: none"
+				>{String.fromCodePoint(codepoint)}</text
+			>
+		{/if}
+		<line
+			x1="-3"
+			x2={width + 3}
+			y1={baseline}
+			y2={baseline}
+			stroke="#d24a4a"
+			stroke-width="1"
+			stroke-dasharray="3 2"
+		/>
+		<rect x="0.5" y="0.5" width={width - 1} height={height - 1} fill="none" stroke="#b9b9bd" />
+	</svg>
+	<span class="mt-1 font-mono text-[10px] leading-none whitespace-nowrap text-[#777]"
 		>U+{codepoint.toString(16).toUpperCase().padStart(4, '0')}</span
 	>
-</span>
+</div>

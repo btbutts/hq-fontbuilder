@@ -10,6 +10,7 @@ coverage matrix unambiguous.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -30,10 +31,15 @@ class GlyphGroup:
         """The number of code points assigned to this group."""
         return sum(high - low + 1 for low, high in self.ranges)
 
-    @property
+    @cached_property
     def codepoints(self) -> tuple[int, ...]:
         """Every code point of the group, in order."""
         return tuple(cp for low, high in self.ranges for cp in range(low, high + 1))
+
+    @cached_property
+    def codepoint_set(self) -> frozenset[int]:
+        """Every code point of the group, for membership tests and intersections."""
+        return frozenset(self.codepoints)
 
 
 # Group table, in display order. Two deliberate deviations from the Unicode block
@@ -47,11 +53,16 @@ GROUPS: tuple[GlyphGroup, ...] = (
                ((0x20, 0x2F), (0x3A, 0x40), (0x5B, 0x60), (0x7B, 0x7E))),
     GlyphGroup("latin-1", "Latin-1 Supplement", ((0xA0, 0xFF),)),
     GlyphGroup("latin-ext", "Latin Extended-A", ((0x100, 0x17F),)),
+    GlyphGroup("latin-ext-b", "Latin Extended-B", ((0x180, 0x24F),)),
+    GlyphGroup("latin-ext-additional", "Latin Extended Additional", ((0x1E00, 0x1EFF),)),
     GlyphGroup("greek", "Greek", ((0x370, 0x3FF),)),
     GlyphGroup("cyrillic", "Cyrillic", ((0x400, 0x4FF),)),
     GlyphGroup("punctuation", "General Punctuation", ((0x2000, 0x209F),)),
     GlyphGroup("currency", "Currency Symbols", ((0x20A0, 0x20CF),)),
+    GlyphGroup("letterlike", "Letterlike Symbols", ((0x2100, 0x214F),)),
+    GlyphGroup("number-forms", "Number Forms", ((0x2150, 0x218F),)),
     GlyphGroup("arrows", "Arrows", ((0x2190, 0x21FF),)),
+    GlyphGroup("misc-arrows", "Miscellaneous Symbols and Arrows", ((0x2B00, 0x2BFF),)),
     GlyphGroup("math", "Mathematical Operators", ((0x2200, 0x22FF),)),
     GlyphGroup("technical", "Miscellaneous Technical", ((0x2300, 0x23FF),)),
     GlyphGroup("box-drawing", "Box Drawing", ((0x2500, 0x257F),), atomic=True),
@@ -70,6 +81,5 @@ GROUPS_BY_ID: dict[str, GlyphGroup] = {group.id: group for group in GROUPS}
 
 def coverage(codepoints: Iterable[int], group: GlyphGroup) -> tuple[int, int]:
     """Return ``(present, total)`` of the group's code points found in ``codepoints``."""
-    have = set(codepoints)
-    present = sum(1 for cp in group.codepoints if cp in have)
-    return present, group.total
+    have = codepoints if isinstance(codepoints, (set, frozenset)) else frozenset(codepoints)
+    return len(group.codepoint_set & have), group.total

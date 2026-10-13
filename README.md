@@ -29,7 +29,7 @@ the command line — the quick way to reproduce the coverage measurements for an
 ## _The fonts directory convention_
 
 ```
-fonts/
+fonts/                     <- next to font_composer/; empty in a release
   DejaVu/                  <- the folder name is the family label
     DejaVuSansMono.ttf
     DejaVuSansMono-Bold.ttf
@@ -38,6 +38,9 @@ fonts/
     ...
 ```
 
+`fonts/` sits next to the `font_composer/` package (the directory is part of every
+checkout and release, empty; its contents are never committed or shipped) and is the
+directory the console watches unless you pass `--fonts-dir`.
 One sub-folder per family; any TTF/OTF dropped into a folder belongs to that family.
 Files are picked up automatically while the console runs (polled once a second, no
 dependencies). Files that cannot be read are listed on the main page with the reason —
@@ -67,21 +70,82 @@ Inspect a font (metadata, fixed-width judgement, per-group coverage):
 .fontbuilder.venv/bin/python -m font_composer inspect fonts/DejaVu/DejaVuSansMono.ttf
 ```
 
-Run the font-composer web console and open <http://localhost:8765>:
+Run the font-composer web console:
 
 ```sh
-.fontbuilder.venv/bin/python -m font_composer compose --fonts-dir fonts --config composer.toml
+.fontbuilder.venv/bin/python -m font_composer compose
 ```
+
+That is the whole command; every option has a default (`--help` shows them, with
+examples):
+
+| Option | Default |
+|---|---|
+| `--fonts-dir DIR` | `fonts/` next to `font_composer/` |
+| `--config FILE` | `composer.toml` next to `font_composer/` (untracked: it is in `.gitignore`) |
+| `--host HOST` | `localhost`, which is both `127.0.0.1` and `::1` |
+| `--port PORT` | chosen automatically, see below |
+| `--monitor` | off: on a terminal, show the scrolling tail described below |
+
+**On the terminal** the console keeps four lines on screen while it runs, the address to
+open first:
+
+```
+The font_composer console is reachable at: http://localhost:8710/
+	listening on IP Addresses: 127.0.0.1, ::1
+	fonts: /path/to/fonts
+	config: /path/to/composer.toml
+```
+
+Below them, like `tail -f`, are the last request lines (`::1 - - [..] "GET /fonts/... HTTP/1.1"
+200 -`), never more than 60 % of the terminal's height, scrolling in place; the SPA's
+version poll (every two seconds per open page) is left out so it does not push the rest
+away. The bottom line reads `Press 'Q' to quit or 'R' to Reload`: **Q** (or Ctrl-C)
+stops the console, **R** restarts it with the same command line, picking up code, fonts
+and config afresh. With `--monitor`, or when the output is not a terminal (a pipe, a
+log file), nothing is redrawn: the lines are printed one after the other, without end,
+and a terminal still gets the Q and R keys.
+
+The console has no authentication (it writes a file on this machine), which is why the default
+is the loopback addresses only; give `--host` an interface address to listen elsewhere.
+
+**Port.** Without `--port` the console reuses the port saved in the config (`[server]
+port`) when it is free; otherwise it takes the first free port of `8700-9000`, then of
+`18700-19000`, in steps of 5 (so the last digit is 0 or 5), and saves it. "In use" is
+judged by connecting, so a dev server on the wildcard address (`*:8700`) is noticed too.
+If that saved port has since been taken, a new one is chosen and the console says so. With
+`--port N` the console uses exactly `N` (and saves it); if `N` is in use it stops with a
+message: pick another with `--port`, or drop `--port` to have one chosen.
 
 In the console:
 
 * The **coverage table** has one row per glyph group and one column per family; a cell
   shows `present/total` and is green when complete, amber when partial, grey when
-  empty. `box-drawing` and `block-elements` are *atomic*: they only count as sourced
-  at 100%. The outlined cell is the family currently chosen for that group.
+  empty. The numbers are those of the family's *reference style*, the upright cut
+  nearest Regular (not a union over all its files: a composed style takes its glyphs
+  from one file, so a union would claim glyphs no single file holds). `≠` marks a group
+  on which the family's styles hold different glyphs. `box-drawing` and
+  `block-elements` are *atomic*: they only count as sourced at 100%. The outlined cell
+  is the family currently chosen for that group.
 * **Click a cell** to open the group page: every style of the family, every code point
-  of the group, drawn by the font itself inside a box the size of the base family's
-  cell (cell edges and baseline shown, so overflow and misalignment are visible).
+  of the group, drawn by the font itself in a box the size of the base family's cell.
+  The box is the cell a console would give the glyph (width = the base family's
+  advance, height = its ascent + descent), the dashed red line is the baseline, and
+  the glyph's origin is the cell's left edge, as in a terminal, so a donor whose advance
+  or height differs visibly overflows. Each glyph is an SVG `<text>`, so the baseline is
+  exactly where the base family's ascent puts it whatever the donor's own metrics are.
+  A code point the font does not have is a hatched cell, never a glyph borrowed from
+  another font. Groups of more than 512 code points (Nerd Font private use) draw only
+  the glyphs a style holds, 256 at a time.
+* **Layout.** By default the cells are stacked in rows that never wrap and are
+  left-aligned, so a column means the same thing in every row and every style: `alnum`
+  is digits, then capitals, then lower case; any other group is cut in rows of 16 by code
+  point, like the Unicode charts (the row label is `U+25A_`, the column is the last hex
+  digit). The page scrolls sideways when a row is wider than the window. The
+  **Enable glyph wrapping** switch at the top right of the page gives one wrapping run
+  instead (the choice is remembered by the browser). The layout code is in
+  `src/composer-web/src/lib/glyphLayout.ts` (pure functions, `npm test`) and
+  `GlyphGrid.svelte`.
 * The **radio on the group page** chooses that family as the source of the group;
   choosing another family elsewhere replaces the choice. Every choice is written to
   `composer.toml` immediately.
@@ -90,9 +154,11 @@ In the console:
 
 ## _The configuration file_
 
-`composer.toml` is created with sensible defaults on first run. The console only ever
-writes the `[groups]` table (group id → family label); everything else is yours to
-hand-edit and survives the console's saves:
+`composer.toml` is created with sensible defaults on first run. The console writes
+the `[groups]` table (group id → family label) and `[server] port` (the port it last
+listened on); everything else is yours to hand-edit, comments included, and survives the console's saves. You may edit the file
+while the console runs: it notices the change (and a file that does not parse is
+reported on the main page and never overwritten):
 
 ```toml
 [output]
@@ -106,6 +172,9 @@ fit = "base"
 [groups]                   # written by the console
 box-drawing = "FiraCode"
 arrows = "DejaVu"
+
+[server]                   # written by the console
+port = 8710
 
 # hand-editable extras the build will honour: [group-options.<id>], [glyphs]
 # (single-glyph overrides), [styles.<Style>] (donor style per target style).
@@ -130,7 +199,7 @@ app whose source lives in `src/composer-web/` (requires Node/npm). Compile it wi
 ```
 
 or, from inside `src/composer-web/`, `npm run build` directly (`npm run check` runs
-svelte-check, TypeScript strict).
+svelte-check, TypeScript strict; `npm test` runs the glyph layout unit tests).
 
 **Python owns the webserver.** `python -m font_composer compose` is the only process
 you run: it watches the fonts directory, serves the JSON API and font files, and hosts
@@ -144,14 +213,18 @@ the release workflow bot, which compiles the SPA and tarballs it into the releas
 The build wipes and rewrites that directory, so you choose when to recompile.
 
 For frontend development only, `npm run dev` gives Vite's live-reload dev server; it
-proxies `/api` and `/fonts` to the Python console (default port 8765), which must run
-alongside it. This is optional — plain `./compile-spa.sh` plus the Python console is
+proxies `/api` and `/fonts` to the Python console on `localhost`, which must run
+alongside it. The port is read from `composer.toml` (`[server] port`, saved by the
+console) or from the `COMPOSER_PORT` environment variable. This is optional — plain `./compile-spa.sh` plus the Python console is
 the normal loop.
 
 The Python server serves any unknown non-API path as the SPA fallback `200.html`, so
 client-side routes like `/group?family=…&group=…` work on a hard refresh.
 
 ## _Releases_
+
+The tarball holds the sources, the compiled web console and an empty `fonts/`
+directory; no fonts are shipped.
 
 Pushing a version tag runs `.github/workflows/release.yml` (it can also be started by
 hand from the Actions tab):
@@ -161,7 +234,7 @@ git tag -a v0.1.0 -m "hq-fontbuilder 0.1.0" && git push origin v0.1.0
 ```
 
 The workflow sets up Python and Node, runs `./setup-build-env.sh` (which compiles the
-SPA on the fresh checkout), runs the tests and svelte-check, then builds
+SPA on the fresh checkout), runs the tests, linters and svelte-check, then builds
 `hq-fontbuilder-<version>.tar.gz`: the tracked sources listed in
 `.github/release-files.txt` plus the compiled web console. The tarball is smoke-tested
 (SPA present, test suite green inside it), checksummed, and published as a GitHub

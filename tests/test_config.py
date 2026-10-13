@@ -7,6 +7,8 @@ from pathlib import Path
 
 from font_composer.common.config import Config
 
+SAVED_PORT = 8710
+
 HAND_EDITED = """\
 [output]
 family = "Console Mono"
@@ -82,3 +84,27 @@ def test_save_is_atomic_and_leaves_no_tmp(tmp_path: Path) -> None:
     config.choose("dingbats", "DejaVu")
     config.save()
     assert not (tmp_path / "composer.toml.tmp").exists()
+
+
+def test_saved_port_round_trip_keeps_the_rest(tmp_path: Path) -> None:
+    """Add [server] port without touching comments or other sections."""
+    path = tmp_path / "composer.toml"
+    path.write_text("# mine\n" + HAND_EDITED, encoding="utf-8")
+    config = Config.load(path)
+    assert config.saved_port is None
+    config.set_port(SAVED_PORT)
+    assert config.saved_port == SAVED_PORT
+    text = path.read_text(encoding="utf-8")
+    assert text.startswith("# mine\n")
+    data = tomllib.loads(text)
+    assert data["server"] == {"port": SAVED_PORT}
+    assert data["groups"] == {"alnum": "FiraCode"}
+    assert Config.load(path).saved_port == SAVED_PORT
+
+
+def test_unusable_saved_ports_are_ignored(tmp_path: Path) -> None:
+    """Treat a non-integer or out-of-range [server] port as not saved."""
+    path = tmp_path / "composer.toml"
+    for value in ('"http"', "0", "70000", "true", "-5"):
+        path.write_text(f"[server]\nport = {value}\n", encoding="utf-8")
+        assert Config.load(path).saved_port is None, value

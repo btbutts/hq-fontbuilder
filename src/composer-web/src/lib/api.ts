@@ -66,10 +66,21 @@ export interface ComposerState {
 	groups: GroupInfo[];
 	families: FamilyInfo[];
 	coverage: Record<string, Record<string, [number, number]>>;
+	/** family label -> ids of the groups on which the styles of the family disagree */
+	uneven: Record<string, string[]>;
 	choices: Record<string, string>;
 	base: BaseMetrics | null;
 	summary: SummaryEntry[];
 	problems: ProblemFont[];
+	/** set while composer.toml does not parse; the last good configuration stays in force */
+	configError: string | null;
+}
+
+export interface GlyphsPayload {
+	family: string;
+	group: string;
+	/** style file name -> code points of the group that the file holds */
+	styles: Record<string, number[]>;
 }
 
 export interface ChooseResult {
@@ -90,6 +101,13 @@ export async function fetchVersion(): Promise<number> {
 	return payload.version;
 }
 
+export async function fetchGlyphs(family: string, group: string): Promise<GlyphsPayload> {
+	const query = new URLSearchParams({ family, group });
+	const response = await fetch(`/api/glyphs?${query}`);
+	if (!response.ok) throw new Error(`/api/glyphs: ${response.status}`);
+	return (await response.json()) as GlyphsPayload;
+}
+
 export async function postChoose(group: string, family: string | null): Promise<ChooseResult> {
 	const response = await fetch('/api/choose', {
 		method: 'POST',
@@ -97,6 +115,6 @@ export async function postChoose(group: string, family: string | null): Promise<
 		body: JSON.stringify({ group, family })
 	});
 	if (response.ok) return { ok: true };
-	const payload = (await response.json()) as { error?: string };
+	const payload = (await response.json().catch(() => ({}))) as { error?: string };
 	return { ok: false, error: payload.error ?? `error ${response.status}` };
 }

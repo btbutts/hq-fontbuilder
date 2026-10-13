@@ -1,9 +1,9 @@
 [project]
-name = "font-composer"
+name = "HQ-FontBuilder"
 version = "0.1.0"
 description = "Compose one monospace terminal font from per-group donors, chosen in a web console."
 requires-python = ">=3.12"
-dependencies = ["fonttools>=4.50"]
+dependencies = ["fonttools>=4.50", "tomlkit>=0.12"]
 
 [tool.ruff]
 line-length = 100

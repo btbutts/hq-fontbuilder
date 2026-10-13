@@ -2,6 +2,7 @@
 # The compiled web console (font_composer/composer/web/static/) is not tracked;
 # the workflow compiles it with compile-spa.sh and adds it to the tarball.
 font_composer/
+fonts/.gitkeep
 src/
 tests/
 compile-spa.sh

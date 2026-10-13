@@ -105,8 +105,11 @@ jobs:
           set -euo pipefail
           .fontbuilder.venv/bin/pytest -q
           .fontbuilder.venv/bin/ruff check font_composer tests
+          .fontbuilder.venv/bin/pylint font_composer tests
+          .fontbuilder.venv/bin/pyright
           cd src/composer-web
           npm run check
+          npm test
 
       - name: Build the tarball
         run: |

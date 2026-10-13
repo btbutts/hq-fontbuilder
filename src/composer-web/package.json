@@ -12,7 +12,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "prepare": "svelte-kit sync",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --test src/lib/glyphLayout.test.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^4.0.0",

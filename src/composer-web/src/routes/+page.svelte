@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { goto } from '$app/navigation';
 	import { consoleStore } from '#lib/console.svelte.js';
 
 	const state = $derived(consoleStore.state);
@@ -10,17 +9,26 @@
 		return 'bg-[#fff3cd] text-[#9c7c00]';
 	}
 
-	function openGroup(familyLabel: string, groupId: string): void {
+	function groupHref(familyLabel: string, groupId: string): string {
 		const params = new URLSearchParams({ family: familyLabel, group: groupId });
-		void goto(`/group?${params}`);
+		return `/group?${params}`;
 	}
 </script>
 
 <h1 class="mb-1 text-[1.4rem] font-semibold">font-composer</h1>
 <p class="mt-0 max-w-5xl text-[#555]">
-	Coverage by glyph group and family. Click a cell to inspect the group's glyphs for that
-	family. Atomic groups count as sourced only at 100%.
+	Coverage by glyph group and family, measured on each family's reference style (the upright
+	cut nearest Regular). Click a cell to inspect the group's glyphs for that family. Atomic
+	groups count as sourced only at 100%. A ≠ marks a group on which the family's styles hold
+	different glyphs.
 </p>
+
+{#if state?.configError}
+	<p class="mt-4 max-w-5xl rounded border border-[#b02e2e] bg-[#fdecec] px-3 py-2 text-[#b02e2e]">
+		The configuration file does not parse, so the last good configuration is still in force and
+		nothing will be saved until it is fixed: {state.configError}
+	</p>
+{/if}
 
 {#if state === null}
 	<p class="mt-4 text-[#555]">{consoleStore.error ?? 'loading…'}</p>
@@ -45,12 +53,17 @@
 					{#each state.families as family (family.label)}
 						{@const [present, total] = state.coverage[family.label]?.[group.id] ?? [0, group.total]}
 						{@const chosen = state.choices[group.id] === family.label}
+						{@const uneven = state.uneven[family.label]?.includes(group.id) ?? false}
 						<td
-							class="cursor-pointer border border-[#b9b9bd] px-2 py-1 text-center whitespace-nowrap outline-2 outline-offset-[-2px] outline-transparent hover:outline-[#1b4965] {cellClasses(present, total)} {chosen ? 'font-bold shadow-[inset_0_0_0_3px_#1b4965]' : ''}"
-							title="{family.label} — {group.label}"
-							onclick={() => openGroup(family.label, group.id)}
+							class="border border-[#b9b9bd] p-0 text-center whitespace-nowrap {cellClasses(present, total)} {chosen ? 'font-bold shadow-[inset_0_0_0_3px_#1b4965]' : ''}"
 						>
-							{present}/{total}
+							<a
+								href={groupHref(family.label, group.id)}
+								class="block px-2 py-1 outline-2 outline-offset-[-2px] outline-transparent hover:outline-[#1b4965] focus-visible:outline-[#1b4965]"
+								title="{family.label} — {group.label}{uneven ? ' (styles differ)' : ''}"
+							>
+								{present}/{total}{uneven ? ' ≠' : ''}
+							</a>
 						</td>
 					{/each}
 				</tr>

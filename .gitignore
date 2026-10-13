@@ -2,8 +2,13 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
-fonts/
+# The user's fonts and the console's configuration (family choices, saved port) are
+# local data and never committed. fonts/ itself is tracked through .gitkeep so a
+# checkout, and the release tarball, has the (empty) directory the console watches.
+fonts/*
+!fonts/.gitkeep
 composer.toml
+composer.toml.tmp
 out/
 
 # composer web console (src/composer-web) build intermediates and compiled

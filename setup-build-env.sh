@@ -17,6 +17,11 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")"
 VENV=".fontbuilder.venv"
 STATIC_DIR="font_composer/composer/web/static"
 
+if ! python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 12) else 1)'; then
+    echo "setup-build-env.sh: python3 $(python3 -V 2>&1) is too old; Python 3.12 or later is required" >&2
+    exit 1
+fi
+
 if [ ! -x "${VENV}/bin/python" ]; then
     echo "creating virtualenv ${VENV}"
     python3 -m venv "${VENV}"
@@ -26,10 +31,12 @@ fi
 source "${VENV}/bin/activate"
 pip install -q -r requirements.txt
 
-if [ ! -d "${STATIC_DIR}" ] || [ -z "$(ls -A "${STATIC_DIR}")" ]; then
+# 200.html is the page the server needs for every client-side route; a missing or
+# interrupted build lacks it and is redone.
+if [ ! -f "${STATIC_DIR}/200.html" ]; then
     echo "compiled web console not found; building it"
     ./compile-spa.sh
 fi
 
-echo "setup complete: run the console with"
-echo "  ${VENV}/bin/python -m font_composer compose --fonts-dir fonts --config composer.toml"
+echo "setup complete: put font family folders in fonts/, then start the console with"
+echo "  ${VENV}/bin/python -m font_composer compose"

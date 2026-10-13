@@ -1,0 +1,135 @@
+"""Tests for font_composer.composer.web.server: routing, content types, static fallback."""
+
+from __future__ import annotations
+
+import json
+import threading
+from http import HTTPStatus
+from http.client import HTTPConnection
+from typing import TYPE_CHECKING, Any
+
+import pytest
+from support import build_font
+
+from font_composer.common.config import Config
+from font_composer.composer.state import ConsoleState
+from font_composer.composer.web import ports
+from font_composer.composer.web import server as web_server
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from pathlib import Path
+
+
+class _Client:
+    """A minimal HTTP client bound to the test server's port."""
+
+    def __init__(self, port: int) -> None:
+        """Remember the port of the running test server."""
+        self.port = port
+
+    def request(self, method: str, path: str, body: bytes | None = None,
+                content_type: str | None = None) -> tuple[int, dict[str, str], bytes]:
+        """Send one request; return status, lower-cased headers and body."""
+        connection = HTTPConnection("127.0.0.1", self.port, timeout=5)
+        try:
+            headers = {"Content-Type": content_type} if content_type else {}
+            connection.request(method, path, body=body, headers=headers)
+            response = connection.getresponse()
+            data = response.read()
+            return response.status, {k.lower(): v for k, v in response.getheaders()}, data
+        finally:
+            connection.close()
+
+    def json(self, method: str, path: str, payload: Any = None,
+             content_type: str | None = "application/json") -> tuple[int, Any]:
+        """Send a JSON request and decode the JSON answer."""
+        body = None if payload is None else json.dumps(payload).encode("utf-8")
+        status, _headers, data = self.request(method, path, body, content_type)
+        return status, json.loads(data)
+
+
+@pytest.fixture(name="client")
+def client_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[_Client]:
+    """Run the console server on a free loopback port over two tiny families."""
+    fonts = tmp_path / "fonts"
+    for label in ("Alpha", "Beta"):
+        (fonts / label).mkdir(parents=True)
+        build_font(fonts / label / f"{label}-Regular.ttf", codepoints=[ord("M"), 0x2190])
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "200.html").write_text("<p>shell</p>", encoding="utf-8")
+    (static / "index.html").write_text("<p>index</p>", encoding="utf-8")
+    monkeypatch.setattr(web_server, "STATIC_DIR", static)
+    config = Config.load(tmp_path / "composer.toml", default_base="Alpha")
+    httpd = web_server.ConsoleHTTPServer("127.0.0.1", 0, ConsoleState(fonts, config))
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield _Client(httpd.server_address[1])
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+        thread.join(timeout=5)
+
+
+def test_listens_on_localhost_by_default() -> None:
+    """Never expose the unauthenticated console on every interface unless asked."""
+    assert web_server.DEFAULT_HOST == "localhost"
+    assert ports.local_addresses(web_server.DEFAULT_HOST) == ["127.0.0.1", "::1"]
+
+
+def test_state_and_version(client: _Client) -> None:
+    """Serve the snapshot and the version counter."""
+    status, state = client.json("GET", "/api/state")
+    assert status == HTTPStatus.OK
+    assert [family["label"] for family in state["families"]] == ["Alpha", "Beta"]
+    status, version = client.json("GET", "/api/version")
+    assert status == HTTPStatus.OK
+    assert version == {"version": state["version"]}
+
+
+def test_choose_requires_a_json_content_type(client: _Client) -> None:
+    """Refuse the body a cross-site form post could send without a preflight."""
+    body = {"group": "arrows", "family": "Alpha"}
+    status, payload = client.json("POST", "/api/choose", body, content_type="text/plain")
+    assert status == HTTPStatus.UNSUPPORTED_MEDIA_TYPE
+    assert "error" in payload
+    status, payload = client.json("POST", "/api/choose", body)
+    assert status == HTTPStatus.OK
+    assert payload["choices"] == {"arrows": "Alpha"}
+
+
+def test_choose_rejects_a_malformed_body(client: _Client) -> None:
+    """Answer 400 for JSON that is not {group, family}."""
+    for body in ({"family": "Alpha"}, {"group": "arrows", "family": 3}):
+        assert client.json("POST", "/api/choose", body)[0] == HTTPStatus.BAD_REQUEST
+
+
+def test_glyphs_endpoint(client: _Client) -> None:
+    """Serve the present code points of a group for each style of a family."""
+    status, payload = client.json("GET", "/api/glyphs?family=Alpha&group=arrows")
+    assert status == HTTPStatus.OK
+    assert payload["styles"] == {"Alpha-Regular.ttf": [0x2190]}
+    assert client.json("GET", "/api/glyphs?family=Nowhere&group=arrows")[0] == HTTPStatus.NOT_FOUND
+
+
+def test_font_bytes_are_served_from_family_folders_only(client: _Client) -> None:
+    """Serve a font file, and nothing outside a family folder."""
+    status, headers, data = client.request("GET", "/fonts/Alpha/Alpha-Regular.ttf")
+    assert status == HTTPStatus.OK
+    assert headers["content-type"] == "font/ttf"
+    assert data[:4] == b"\x00\x01\x00\x00"
+    escape = client.request("GET", "/fonts/Alpha/..%2F..%2Fcomposer.toml")
+    assert escape[0] == HTTPStatus.BAD_REQUEST
+    assert client.request("GET", "/fonts/Alpha/missing.ttf")[0] == HTTPStatus.NOT_FOUND
+
+
+def test_static_fallback_is_for_routes_not_for_missing_assets(client: _Client) -> None:
+    """Give client-side routes the app shell, but 404 a missing script."""
+    status, _headers, data = client.request("GET", "/group")
+    assert (status, data) == (HTTPStatus.OK, b"<p>shell</p>")
+    status, _headers, data = client.request("GET", "/")
+    assert (status, data) == (HTTPStatus.OK, b"<p>index</p>")
+    assert client.request("GET", "/_app/immutable/missing.js")[0] == HTTPStatus.NOT_FOUND
+    assert client.request("GET", "/%2e%2e/%2e%2e/etc/passwd")[0] == HTTPStatus.BAD_REQUEST

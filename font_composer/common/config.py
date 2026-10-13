@@ -1,83 +1,95 @@
 """Load and save the TOML composer configuration.
 
-``tomllib`` reads the file; a small writer writes it back. The parsed dictionary is
-kept as-is and the console only ever mutates the ``[groups]`` table, so hand-edited
-sections (``output``, ``cell``, ``styles.*``, ``group-options.*``, ``glyphs``)
-round-trip untouched. Comments are not preserved. Saving is atomic: the new content
+``tomlkit`` reads and writes the file, so everything the console does not own
+(``[output]``, ``[cell]``, ``[styles.*]``, ``[group-options.*]``, ``[glyphs]``), and every
+comment and blank line, survives a save untouched. Saving is atomic: the new content
 goes to a temporary file in the same directory and is renamed over the old one.
+
+Besides ``[groups]`` the console writes ``[server] port``, the port it last listened
+on, so that the same port is tried first the next time.
+
+The file is meant to be hand-edited while the console runs, so :meth:`Config.update_choice`
+re-reads it before applying a choice (a hand edit is never overwritten with a stale
+in-memory copy), and :meth:`Config.refresh_if_changed` lets the console pick edits up.
 """
 
 from __future__ import annotations
 
-import tomllib
-from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import tomlkit
+from tomlkit.exceptions import TOMLKitError
+
+if TYPE_CHECKING:
+    from collections.abc import MutableMapping
+    from pathlib import Path
+
+_FileStamp = tuple[int, int]
+
+_PORT_LIMIT = 65536
+
+_HEADER = """\
+font-composer configuration. The web console only writes the [groups] table; the other
+sections are yours to edit, also while the console runs (comments are kept). The console
+also keeps the port it listens on in [server], to reuse it next time."""
 
 
 class ConfigError(Exception):
     """Raised when the configuration file cannot be parsed or written."""
 
 
-def _toml_value(value: Any) -> str:
-    """Render one TOML value (string, number, boolean, list or inline table)."""
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    if isinstance(value, str):
-        return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
-    if isinstance(value, (int, float)):
-        return repr(value)
-    if isinstance(value, list):
-        return "[" + ", ".join(_toml_value(item) for item in value) + "]"
-    if isinstance(value, dict):
-        items = ", ".join(f"{_toml_key(key)} = {_toml_value(item)}" for key, item in value.items())
-        return "{ " + items + " }"
-    message = f"cannot write TOML value of type {type(value).__name__}: {value!r}"
-    raise ConfigError(message)
+def _default_document(base_family: str) -> tomlkit.TOMLDocument:
+    """Return the default configuration for a fresh composer.toml."""
+    document = tomlkit.document()
+    for line in _HEADER.splitlines():
+        document.add(tomlkit.comment(line))
+    document.add(tomlkit.nl())
+
+    output = tomlkit.table()
+    output.add("family", "Console Mono")
+    output.add("styles", ["Regular", "Bold"])
+    document.add("output", output)
+    document.add(tomlkit.nl())
+
+    cell = tomlkit.table()
+    cell.add(tomlkit.comment("family that defines the cell: advance, ascent, descent"))
+    cell.add("base", base_family)
+    cell.add("fit", "base")
+    document.add("cell", cell)
+    document.add(tomlkit.nl())
+
+    groups = tomlkit.table()
+    groups.add(tomlkit.comment("group id = family folder; written by the console"))
+    document.add("groups", groups)
+    return document
 
 
-def _toml_key(key: str) -> str:
-    """Quote a TOML key when it is not a bare key."""
-    if key and all(char.isalnum() or char in "-_" for char in key):
-        return key
-    return _toml_value(key)
+def _stamp(path: Path) -> _FileStamp | None:
+    """Return ``(mtime_ns, size)`` of the file, or None when it cannot be read."""
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return stat.st_mtime_ns, stat.st_size
 
 
-def _emit_table(lines: list[str], prefix: list[str], table: dict[str, Any]) -> None:
-    """Append one table's key/value lines and recurse into sub-tables."""
-    scalars = [(key, value) for key, value in table.items() if not isinstance(value, dict)]
-    sub_tables = [(key, value) for key, value in table.items() if isinstance(value, dict)]
-    for key, value in scalars:
-        lines.append(f"{_toml_key(key)} = {_toml_value(value)}")
-    for key, value in sub_tables:
-        if lines and lines[-1]:
-            lines.append("")
-        lines.append(f"[{'.'.join([*prefix, _toml_key(key)])}]")
-        _emit_table(lines, [*prefix, key], value)
-
-
-def dumps(data: dict[str, Any]) -> str:
-    """Serialize a parsed configuration dictionary to TOML text."""
-    lines: list[str] = []
-    _emit_table(lines, [], data)
-    return "\n".join(lines) + "\n"
-
-
-def default_config(base_family: str) -> dict[str, Any]:
-    """Return the default configuration dictionary for a fresh composer.toml."""
-    return {
-        "output": {"family": "Console Mono", "styles": ["Regular", "Bold"]},
-        "cell": {"base": base_family, "fit": "base"},
-        "groups": {},
-    }
+def _parse(path: Path) -> tomlkit.TOMLDocument:
+    """Read and parse the file; raise :class:`ConfigError` with the reason on failure."""
+    try:
+        return tomlkit.parse(path.read_text(encoding="utf-8"))
+    except (TOMLKitError, OSError, ValueError) as exc:
+        message = f"cannot load {path}: {exc}"
+        raise ConfigError(message) from exc
 
 
 class Config:
     """A parsed composer.toml plus its path; only ``[groups]`` is ever mutated."""
 
-    def __init__(self, path: Path, data: dict[str, Any]) -> None:
+    def __init__(self, path: Path, data: MutableMapping[str, Any]) -> None:
         """Hold the parsed data; use :meth:`load` instead of calling this directly."""
         self.path = path
         self.data = data
+        self._loaded_stamp = _stamp(path)
 
     @classmethod
     def load(cls, path: Path, default_base: str = "") -> Config:
@@ -87,24 +99,31 @@ class Config:
         configuration; it is ignored when the file already exists.
         """
         if not path.exists():
-            config = cls(path, default_config(default_base))
+            config = cls(path, _default_document(default_base))
             config.save()
             return config
-        try:
-            with path.open("rb") as handle:
-                data = tomllib.load(handle)
-        except (tomllib.TOMLDecodeError, OSError) as exc:
-            message = f"cannot load {path}: {exc}"
-            raise ConfigError(message) from exc
-        if not isinstance(data, dict):
-            message = f"cannot load {path}: top level is not a table"
-            raise ConfigError(message)
-        return cls(path, data)
+        return cls(path, _parse(path))
+
+    def refresh_if_changed(self) -> bool:
+        """Re-read the file when it changed on disk; return True when it was re-read.
+
+        Raises :class:`ConfigError` when the changed file does not parse; the data
+        held so far is then left as it was.
+        """
+        stamp = _stamp(self.path)
+        if stamp is None or stamp == self._loaded_stamp:
+            return False
+        self.data = _parse(self.path)
+        self._loaded_stamp = stamp
+        return True
 
     @property
-    def groups(self) -> dict[str, Any]:
+    def groups(self) -> MutableMapping[str, Any]:
         """The (possibly empty) ``[groups]`` table, created on demand."""
-        groups = self.data.setdefault("groups", {})
+        groups = self.data.get("groups")
+        if groups is None:
+            groups = tomlkit.table()
+            self.data["groups"] = groups
         if not isinstance(groups, dict):
             message = f"{self.path}: [groups] is not a table"
             raise ConfigError(message)
@@ -123,6 +142,31 @@ class Config:
             return str(cell.get("base", ""))
         return ""
 
+    @property
+    def saved_port(self) -> int | None:
+        """The console port saved by an earlier run (``[server] port``), if it is valid."""
+        server = self.data.get("server")
+        port = server.get("port") if isinstance(server, dict) else None
+        if isinstance(port, int) and not isinstance(port, bool) and 0 < port < _PORT_LIMIT:
+            return port
+        return None
+
+    def set_port(self, port: int) -> None:
+        """Save the port the console listens on, when it differs from the saved one.
+
+        Like :meth:`update_choice` it re-reads the file first, and raises
+        :class:`ConfigError` when the file does not parse or cannot be written.
+        """
+        self.refresh_if_changed()
+        if self.saved_port == port:
+            return
+        server = self.data.get("server")
+        if not isinstance(server, dict):
+            server = tomlkit.table()
+            self.data["server"] = server
+        server["port"] = port
+        self.save()
+
     def choose(self, group: str, family: str | None) -> None:
         """Set (or, with ``family=None``, clear) the family chosen for a group."""
         if family is None:
@@ -130,9 +174,19 @@ class Config:
         else:
             self.groups[group] = family
 
+    def update_choice(self, group: str, family: str | None) -> None:
+        """Apply one choice on top of the file as it is now, and save.
+
+        The file is re-read first so edits made by hand since the last load are kept;
+        when it no longer parses, nothing is written and :class:`ConfigError` tells why.
+        """
+        self.refresh_if_changed()
+        self.choose(group, family)
+        self.save()
+
     def save(self) -> None:
         """Write the configuration atomically (temporary file plus rename)."""
-        text = dumps(self.data)
+        text = tomlkit.dumps(self.data)
         tmp_path = self.path.with_name(self.path.name + ".tmp")
         try:
             tmp_path.write_text(text, encoding="utf-8")
@@ -140,3 +194,4 @@ class Config:
         except OSError as exc:
             message = f"cannot write {self.path}: {exc}"
             raise ConfigError(message) from exc
+        self._loaded_stamp = _stamp(self.path)
