@@ -21,6 +21,7 @@ import IconCaretUpFilled from '@tabler/icons-svelte/icons/caret-up-filled';
 import IconArrowLeft from '@tabler/icons-svelte/icons/arrow-left';
 import IconArrowRight from '@tabler/icons-svelte/icons/arrow-right';
 import IconMinus from '@tabler/icons-svelte/icons/minus';
+import IconPlus from '@tabler/icons-svelte/icons/plus';
 import IconX from '@tabler/icons-svelte/icons/x';
 import { colors } from '../styles.svelte';
 
@@ -118,6 +119,22 @@ const definitions = {
 		textColor: colors.textError,
 		placement: 'justify-self-center',
 		label: 'leave out of this group'
+	},
+	/** A style type that is left out: click to consider it. */
+	'styles.INCLUDE': {
+		surface: 'raised',
+		icon: IconPlus,
+		iconSize: 20,
+		size: REORDER_BOX,
+		label: 'consider this style'
+	},
+	/** A style type that is considered: click to leave it out. */
+	'styles.EXCLUDE': {
+		surface: 'raised',
+		icon: IconX,
+		iconSize: 20,
+		size: REORDER_BOX,
+		label: 'leave this style out'
 	},
 	/** The close button of a dialog (the Style mapping one is the first): red under the pointer. */
 	'modal.CLOSE': {

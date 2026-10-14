@@ -3,10 +3,12 @@
 Commands:
 
 * ``inspect FILE...`` — print each font's metadata and per-group coverage.
-* ``compose [--fonts-dir DIR] [--config FILE] [--host H] [--port N]`` — run the
-  font-composer web console (watches the fonts directory, hosts the selection UI,
-  writes the config). Every option has a default, so ``compose`` alone starts it.
-* ``build`` — assemble the composed fonts (not implemented yet).
+* ``compose [--fonts-dir DIR] [--output-dir DIR] [--config FILE] [--host H] [--port N]``
+  — run the font-composer web console (watches the fonts directory, hosts the
+  selection UI, writes the config). Every option has a default, so ``compose`` alone
+  starts it.
+* ``build [--config FILE] [--fonts-dir DIR] [--output-dir DIR] [--on-missing MODE]``
+  — write the composed fonts and a NOTICE file to the output directory.
 
 This module is a thin orchestrator: it parses the command line and delegates to
 :mod:`font_composer.common` (inspect), :mod:`font_composer.composer` (compose) and
@@ -22,13 +24,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from font_composer import __version__
-from font_composer.builder.build import build
+from font_composer.builder.build import ON_MISSING, BuildOptions, run_build
 from font_composer.common.config import Config, ConfigError
 from font_composer.common.groups import GROUPS, coverage
 from font_composer.common.inspect import FontError, FontInfo, read_font
 from font_composer.common.library import FontLibrary
 from font_composer.common.names import ensure_names_list
-from font_composer.common.paths import DEFAULT_CONFIG, DEFAULT_FONTS_DIR
+from font_composer.common.paths import DEFAULT_CONFIG, DEFAULT_FONTS_DIR, DEFAULT_OUTPUT_DIR
 from font_composer.composer.web.ports import PORT_RANGES, PortUnavailableError
 from font_composer.composer.web.server import DEFAULT_HOST, serve
 
@@ -52,6 +54,22 @@ examples:
       print one font's metadata and coverage
 """
 
+_BUILD_DESCRIPTION = """\
+Write one TrueType font per output style of the config ([output] styles), named
+<Family>-<Style>.ttf, and a NOTICE file that names the fonts they are made of. Code
+points that no glyph group serves keep the glyph of the base family ([cell] base).
+"""
+
+_BUILD_EXAMPLES = f"""\
+examples:
+  {_PROG} build
+      build with font_composer.toml; fonts are read from and written to the
+      directories the config names (fonts/ and output/ by default)
+  {_PROG} build --output-dir /tmp/fonts --on-missing nearest
+      write somewhere else, and never ask: use the nearest style of a family
+      that lacks one
+"""
+
 _COMPOSE_DESCRIPTION = """\
 Run the font-composer web console. It watches the fonts directory, shows what each
 family covers, and records your choices in the config. Every option is optional.
@@ -60,12 +78,15 @@ family covers, and records your choices in the config. Every option is optional.
 _COMPOSE_EXAMPLES = f"""\
 examples:
   {_PROG} compose
-      watch fonts/, keep the choices in composer.toml, and listen on localhost
+      watch fonts/, keep the choices in font_composer.toml, and listen on localhost
       on a free port
   {_PROG} compose --port 8800
       always use port 8800; stop with an error if it is in use
   {_PROG} compose --fonts-dir ~/Fonts --config ~/my-font.toml
       take the families from another directory, keep the choices elsewhere
+  {_PROG} compose --output-dir ~/ComposedFonts
+      write ~/ComposedFonts to the config as where `build` puts the fonts (the
+      console never creates it; `build` does, and uses it unless told otherwise)
   {_PROG} compose --host 192.168.1.20
       listen on one interface address only (no authentication: use with care)
   {_PROG} compose --monitor
@@ -74,8 +95,9 @@ examples:
 keys, while it runs on a terminal:
   Q  stop the console        R  reload it (restart with the same command line)
 
-defaults:
+defaults (the directories: what the config names, else these):
   --fonts-dir  {DEFAULT_FONTS_DIR}
+  --output-dir {DEFAULT_OUTPUT_DIR}
   --config     {DEFAULT_CONFIG}
   --host       {DEFAULT_HOST}, which is both 127.0.0.1 and ::1
   --port       the port saved in the config if it is free; else the first free one
@@ -120,11 +142,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         epilog=_COMPOSE_EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter)
     compose_parser.add_argument(
-        "--fonts-dir", type=Path, default=DEFAULT_FONTS_DIR, metavar="DIR",
-        help="directory of family folders to watch (default: fonts/ next to font_composer/)")
+        "--fonts-dir", type=Path, default=None, metavar="DIR",
+        help="directory of family folders to watch; saved to the config, which the build "
+             "reads (default: the one in the config, else fonts/ next to font_composer/)")
+    compose_parser.add_argument(
+        "--output-dir", type=Path, default=None, metavar="DIR",
+        help="where the build will write the composed fonts; the console only saves it to "
+             "the config ([output] dir) and never creates it (default: the one in the "
+             "config, else output/ next to font_composer/)")
     compose_parser.add_argument(
         "--config", type=Path, default=DEFAULT_CONFIG, metavar="FILE",
-        help="the .toml to read and write (default: composer.toml next to font_composer/)")
+        help="the .toml to read and write (default: font_composer.toml next to font_composer/)")
     compose_parser.add_argument(
         "--host", default=DEFAULT_HOST, metavar="HOST",
         help=f"address or name to listen on (default: {DEFAULT_HOST}, which is both "
@@ -138,7 +166,28 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="port to listen on (default: the port saved in the config if free, else "
              "a free one is chosen; an error if PORT is in use)")
 
-    subparsers.add_parser("build", help="assemble the composed fonts (not implemented yet)")
+    build_parser = subparsers.add_parser(
+        "build", help="write the composed fonts described by the config",
+        description=_BUILD_DESCRIPTION, epilog=_BUILD_EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter)
+    build_parser.add_argument(
+        "--fonts-dir", type=Path, default=None, metavar="DIR",
+        help="directory of family folders; overrides [fonts] dir of the config (default: "
+             "the one in the config, else fonts/ next to font_composer/)")
+    build_parser.add_argument(
+        "--config", type=Path, default=DEFAULT_CONFIG, metavar="FILE",
+        help="the .toml the console wrote (default: font_composer.toml next to "
+             "font_composer/)")
+    build_parser.add_argument(
+        "--output-dir", type=Path, default=None, metavar="DIR",
+        help="where the fonts and the NOTICE file are written, created when missing; "
+             "overrides [output] dir of the config (default: the one in the config, else "
+             "output/ next to font_composer/)")
+    build_parser.add_argument(
+        "--on-missing", choices=ON_MISSING, default="ask",
+        help="what to do when a family has no style of the wanted weight: ask on the "
+             "terminal (default; the answer is saved in the config), use the nearest "
+             "style, synthesize a bold from the nearest lighter one, or fail")
     return parser.parse_args(argv)
 
 
@@ -198,26 +247,47 @@ def _reload() -> None:
     os.execv(sys.executable, [sys.executable, "-m", "font_composer", *sys.argv[1:]])
 
 
-def run_compose(
-    fonts_dir: Path, config_path: Path, host: str, port: int | None, *, monitor: bool = False,
-) -> int:
+def _compose_config(args: argparse.Namespace) -> tuple[Config, Path]:
+    """Load (or create) the configuration and settle the fonts directory.
+
+    The fonts and output directories are the command line's, else the configuration's,
+    else the defaults; the first two are saved to the configuration, which is where the
+    build looks, and so is a default the file did not name yet.
+    """
+    config_path: Path = args.config
+    given: Path | None = args.fonts_dir
+    if config_path.exists():
+        config = Config.load(config_path)
+    else:
+        first = given or DEFAULT_FONTS_DIR
+        if first == DEFAULT_FONTS_DIR:
+            first.mkdir(exist_ok=True)
+        config = Config.load(config_path, default_base=_first_family_with_regular(first))
+    fonts_dir = given or config.directory("fonts") or DEFAULT_FONTS_DIR
+    output_dir = args.output_dir or config.directory("output") or DEFAULT_OUTPUT_DIR
+    config.set_directories(fonts=fonts_dir, output=output_dir)
+    return config, fonts_dir
+
+
+def run_compose(args: argparse.Namespace) -> int:
     """Run the font-composer web console until interrupted."""
+    try:
+        config, fonts_dir = _compose_config(args)
+    except ConfigError as exc:
+        print(f"font_composer: {exc}", file=sys.stderr)
+        return 1
     if fonts_dir == DEFAULT_FONTS_DIR:
         fonts_dir.mkdir(exist_ok=True)
     if not fonts_dir.is_dir():
         print(f"font_composer: fonts directory not found: {fonts_dir}", file=sys.stderr)
         return 1
-    # The base family of a new configuration is only needed (and the scan only paid
-    # for) when the file does not exist yet.
-    default_base = "" if config_path.exists() else _first_family_with_regular(fonts_dir)
     try:
-        config = Config.load(config_path, default_base=default_base)
-        reload = serve(fonts_dir, config, host, port, monitor)
+        reload = serve(fonts_dir, config, args.host, args.port, args.monitor)
     except (ConfigError, PortUnavailableError) as exc:
         print(f"font_composer: {exc}", file=sys.stderr)
         return 1
     except OSError as exc:
-        print(f"font_composer: cannot listen on {host}: {exc}", file=sys.stderr)
+        print(f"font_composer: cannot listen on {args.host}: {exc}", file=sys.stderr)
         return 1
     if reload:
         _reload()
@@ -233,9 +303,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         # glyph names for the console's tooltips and the build's reports; not fatal
         ensure_names_list(say=lambda message: print(message, file=sys.stderr))
     if args.command == "compose":
-        return run_compose(args.fonts_dir, args.config, args.host, args.port,
-                           monitor=args.monitor)
-    return build()
+        return run_compose(args)
+    return run_build(BuildOptions(args.config, args.fonts_dir, args.output_dir,
+                                  args.on_missing))
 
 
 if __name__ == "__main__":

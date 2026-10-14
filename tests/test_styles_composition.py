@@ -10,7 +10,12 @@ from support import FontSpec, NameSpec, build_font
 from font_composer.common.composition import resolve_group
 from font_composer.common.groups import GROUPS_BY_ID
 from font_composer.common.library import FontLibrary
-from font_composer.common.styles import parse_style_name, resolve_style
+from font_composer.common.styles import (
+    parse_style_name,
+    resolve_style,
+    similar_weight,
+    style_type_name,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -41,12 +46,12 @@ def test_style_names_become_weight_and_slant(name: str, weight: int, italic: boo
     assert (target.weight, target.italic) == (weight, italic)
 
 
-def test_medium_and_black_are_different_styles() -> None:
-    """Never fold Medium into Black: they are 500 and 900."""
-    medium, black = parse_style_name("Medium"), parse_style_name("Black")
-    assert medium is not None
-    assert black is not None
-    assert medium.weight != black.weight
+def test_similar_weights_are_one_family_of_styles() -> None:
+    """Thin, ExtraLight and Light are alike; so are Medium, SemiBold and Black."""
+    assert {similar_weight(weight) for weight in (100, 200, 300)} == {300}
+    assert {similar_weight(weight) for weight in (500, 600, 900)} == {600}
+    assert similar_weight(400) != similar_weight(500)
+    assert similar_weight(700) not in {similar_weight(600), similar_weight(900)}
 
 
 def test_unknown_style_name_is_none() -> None:
@@ -70,10 +75,14 @@ def test_donor_is_picked_by_weight_and_slant_not_by_name(tmp_path: Path) -> None
     italic = resolve_style(family, parse_style_name("Italic"))
     assert italic.entry is not None
     assert italic.entry.file_name == "Fam-Slanted.ttf"
-    medium = resolve_style(family, parse_style_name("Medium"))  # 500: 400 and 600 tie
+    medium = resolve_style(family, parse_style_name("Medium"))  # 500: Demi is a similar style
     assert medium.entry is not None
-    assert medium.entry.file_name == "Fam-Book.ttf"
-    assert "nearest" in medium.reason
+    assert medium.entry.file_name == "Fam-Demi.ttf"
+    assert "similar" in medium.reason
+    light = resolve_style(family, parse_style_name("Light"))  # 300: nothing alike, nearest
+    assert light.entry is not None
+    assert light.entry.file_name == "Fam-Book.ttf"
+    assert "nearest" in light.reason
 
 
 def test_no_slant_is_synthesised(tmp_path: Path) -> None:
@@ -134,3 +143,12 @@ def test_a_glyph_override_picks_one_of_the_candidates(tmp_path: Path) -> None:
     assert by_cp[only_a].source == "A"
     assert not by_cp[only_a].overridden
     assert [item.codepoint for item in composition.invalid_overrides] == [only_a]
+
+
+def test_a_style_type_is_what_the_numbers_say() -> None:
+    """Spell weights and slants one way: ``bold`` and ``Bold``, Oblique and Italic agree."""
+    assert style_type_name(700, italic=False) == "Bold"
+    assert style_type_name(400, italic=True) == "Italic"
+    assert style_type_name(300, italic=True) == "Light Italic"
+    assert style_type_name(450, italic=False) == "Regular"
+    assert style_type_name(650, italic=False) == "SemiBold"

@@ -128,6 +128,14 @@ export const colors = {
 	/** Drop-downs inside the Style mapping dialog. */
 	inputBackground: 'bg-[#ffffff] dark:bg-[#121314]',
 
+	/**
+	 * An icon that is the whole button, with no box or background of its own (the pencil that
+	 * renames a style, and the save and undo icons that replace it while a name is typed).
+	 * Quiet at rest, stronger under the pointer.
+	 */
+	bareIconButton:
+		'text-[#555555] hover:text-[#1c1c1e] dark:text-[#e6e6e6] dark:hover:text-[#ffffff]',
+
 	/** Outline drawn round a glyph cell that has keyboard focus. */
 	focusOutline: 'focus-visible:outline-[#1b4965] dark:focus-visible:outline-[#0c5f9a]',
 

@@ -84,11 +84,11 @@ def test_a_font_file_name_is_never_cut(columns: int) -> None:
 
 
 def test_a_config_file_name_is_never_cut() -> None:
-    """Protect composer.toml in the header the same way, even with spaces in the path."""
-    line = "\tconfig: /Users/someone/Documents/GitHub Projects/OpenWRT/fontbuilder/composer.toml"
+    """Protect font_composer.toml in the header the same way, even with spaces in the path."""
+    line = "\tconfig: /Users/someone/Documents/GitHub Projects/OpenWRT/font_composer.toml"
     cut = fit(line, 60)
     assert len(cut) <= LONG_LIMIT - 1
-    assert cut.endswith("/composer.toml")
+    assert cut.endswith("/font_composer.toml")
     assert "…" in cut
 
 

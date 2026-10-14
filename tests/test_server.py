@@ -9,7 +9,7 @@ from http.client import HTTPConnection
 from typing import TYPE_CHECKING, Any
 
 import pytest
-from support import build_font
+from support import FontSpec, NameSpec, build_font
 
 from font_composer.common.config import Config
 from font_composer.composer.state import ConsoleState
@@ -56,12 +56,14 @@ def client_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
     for label in ("Alpha", "Beta"):
         (fonts / label).mkdir(parents=True)
         build_font(fonts / label / f"{label}-Regular.ttf", codepoints=[ord("M"), 0x2190])
+    build_font(fonts / "Alpha" / "Alpha-Bold.ttf", codepoints=[ord("M")],
+               spec=FontSpec(names=NameSpec(style="Bold", weight=700)))
     static = tmp_path / "static"
     static.mkdir()
     (static / "200.html").write_text("<p>shell</p>", encoding="utf-8")
     (static / "index.html").write_text("<p>index</p>", encoding="utf-8")
     monkeypatch.setattr(web_server, "STATIC_DIR", static)
-    config = Config.load(tmp_path / "composer.toml", default_base="Alpha")
+    config = Config.load(tmp_path / "font_composer.toml", default_base="Alpha")
     httpd = web_server.ConsoleHTTPServer("127.0.0.1", 0, ConsoleState(fonts, config))
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
@@ -110,7 +112,7 @@ def test_glyphs_endpoint(client: _Client) -> None:
     """Serve the present code points of a group for each style of a family."""
     status, payload = client.json("GET", "/api/glyphs?family=Alpha&group=arrows")
     assert status == HTTPStatus.OK
-    assert payload["styles"] == {"Alpha-Regular.ttf": [0x2190]}
+    assert payload["styles"] == {"Alpha-Regular.ttf": [0x2190], "Alpha-Bold.ttf": []}
     assert client.json("GET", "/api/glyphs?family=Nowhere&group=arrows")[0] == HTTPStatus.NOT_FOUND
 
 
@@ -120,7 +122,7 @@ def test_font_bytes_are_served_from_family_folders_only(client: _Client) -> None
     assert status == HTTPStatus.OK
     assert headers["content-type"] == "font/ttf"
     assert data[:4] == b"\x00\x01\x00\x00"
-    escape = client.request("GET", "/fonts/Alpha/..%2F..%2Fcomposer.toml")
+    escape = client.request("GET", "/fonts/Alpha/..%2F..%2Ffont_composer.toml")
     assert escape[0] == HTTPStatus.BAD_REQUEST
     assert client.request("GET", "/fonts/Alpha/missing.ttf")[0] == HTTPStatus.NOT_FOUND
 

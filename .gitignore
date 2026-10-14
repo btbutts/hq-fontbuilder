@@ -7,9 +7,12 @@ __pycache__/
 # checkout, and the release tarball, has the (empty) directory the console watches.
 fonts/*
 !fonts/.gitkeep
-composer.toml
-composer.toml.tmp
-out/
+font_composer.toml
+font_composer.toml.tmp
+
+# The fonts the build writes. output/ itself is tracked through .gitkeep, like fonts/.
+output/*
+!output/.gitkeep
 
 # The Unicode names list (NamesList.txt) is downloaded on first use, never committed.
 src/char-sets/NamesList.txt

@@ -280,7 +280,7 @@
 				class="mr-6"
 				onclick={() => goto(`/compose?${new URLSearchParams({ group: groupId })}`)}
 			>
-				combined result
+				Combined Result
 			</CtrlButton>
 			<CtrlButton
 				surface="raised"

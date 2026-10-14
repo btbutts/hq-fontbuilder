@@ -137,7 +137,7 @@ def test_header_tail_window_reload_and_quit(tmp_path: Path) -> None:
     fonts = tmp_path / "fonts"
     (fonts / "Alpha").mkdir(parents=True)
     build_font(fonts / "Alpha" / "Alpha-Regular.ttf", codepoints=[ord("M"), 0x2190])
-    session = _Session(fonts, tmp_path / "composer.toml", _free_port())
+    session = _Session(fonts, tmp_path / "font_composer.toml", _free_port())
     try:
         session.read_until("Press 'Q' to quit or 'R' to Reload")
         for index in range(REQUESTS):

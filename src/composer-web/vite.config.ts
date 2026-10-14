@@ -13,21 +13,21 @@ const staticDir = path.resolve(
 	'../../font_composer/composer/web/static'
 );
 
-// `npm run dev` only: the Python console picks its own port and saves it in composer.toml
+// `npm run dev` only: the Python console picks its own port and saves it in font_composer.toml
 // ([server] port); COMPOSER_PORT overrides it.
 function consolePort(): number {
 	const fromEnv = Number(process.env.COMPOSER_PORT);
 	if (Number.isInteger(fromEnv) && fromEnv > 0) return fromEnv;
 	try {
 		const toml = readFileSync(
-			path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../composer.toml'),
+			path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../font_composer.toml'),
 			'utf-8'
 		);
 		const section = /^\[server\][^[]*/m.exec(toml)?.[0] ?? '';
 		const port = Number(/^\s*port\s*=\s*(\d+)/m.exec(section)?.[1]);
 		if (Number.isInteger(port) && port > 0) return port;
 	} catch {
-		// no composer.toml yet
+		// no font_composer.toml yet
 	}
 	return 8765;
 }

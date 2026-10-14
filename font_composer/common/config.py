@@ -14,6 +14,9 @@ What the console writes:
   order (``"U+2714" = { family = "DejaVu" }``).
 * ``[styles.<Output>]``: a family -> the style file (or style name) that serves that
   output style, replacing the default rules of :mod:`font_composer.common.styles`.
+* ``[output] style-names``: a style name the fonts give (``Oblique``) -> the name it is
+  built and written as (``Italic``). The key never goes away: it is what the style is
+  tracked by (``[styles.Oblique]`` and the list of included styles keep using it).
 * ``[server] port``: the port it last listened on, tried first the next time.
 
 The file is meant to be hand-edited while the console runs, so :meth:`Config.update_choice`
@@ -24,6 +27,7 @@ in-memory copy), and :meth:`Config.refresh_if_changed` lets the console pick edi
 from __future__ import annotations
 
 import re
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import tomlkit
@@ -31,15 +35,14 @@ from tomlkit.exceptions import TOMLKitError
 
 if TYPE_CHECKING:
     from collections.abc import Callable, MutableMapping, Sequence
-    from pathlib import Path
 
 _FileStamp = tuple[int, int]
 
 _PORT_LIMIT = 65536
 
 _CODE_POINT_KEY = re.compile(r"^U\+([0-9A-Fa-f]{4,6})$")
-_DEFAULT_OUTPUT_STYLES = ["Regular", "Bold"]
 
+DEFAULT_STYLES = ("Regular", "Bold")
 _HEADER = """\
 font-composer configuration. The web console writes [groups] (the families of each glyph
 group, in inheritance order), [glyphs] (single code points pinned to a family), [styles.*]
@@ -52,7 +55,7 @@ class ConfigError(Exception):
 
 
 def _default_document(base_family: str) -> tomlkit.TOMLDocument:
-    """Return the default configuration for a fresh composer.toml."""
+    """Return the default configuration for a fresh font_composer.toml."""
     document = tomlkit.document()
     for line in _HEADER.splitlines():
         document.add(tomlkit.comment(line))
@@ -60,7 +63,7 @@ def _default_document(base_family: str) -> tomlkit.TOMLDocument:
 
     output = tomlkit.table()
     output.add("family", "Console Mono")
-    output.add("styles", ["Regular", "Bold"])
+    output.add("styles", list(DEFAULT_STYLES))
     document.add("output", output)
     document.add(tomlkit.nl())
 
@@ -114,8 +117,17 @@ def _table(parent: MutableMapping[str, Any], key: str) -> MutableMapping[str, An
     return child
 
 
+def _stored_form(directory: Path, base: Path) -> str:
+    """Return how a directory is written to the file: relative when inside ``base``."""
+    resolved = directory.expanduser().resolve()
+    try:
+        return str(resolved.relative_to(base.resolve()))
+    except ValueError:
+        return str(resolved)
+
+
 class Config:
-    """A parsed composer.toml plus its path; the console writes only its own tables."""
+    """A parsed font_composer.toml plus its path; the console writes only its own tables."""
 
     def __init__(self, path: Path, data: MutableMapping[str, Any]) -> None:
         """Hold the parsed data; use :meth:`load` instead of calling this directly."""
@@ -202,14 +214,67 @@ class Config:
                 result[int(match.group(1), 16)] = str(family)
         return result
 
-    @property
-    def output_styles(self) -> list[str]:
-        """The style names of ``[output] styles`` (Regular and Bold when unset)."""
-        output = self.data.get("output")
-        styles = output.get("styles") if isinstance(output, dict) else None
-        names = [str(item) for item in styles if isinstance(item, str)] \
-            if isinstance(styles, list) else []
-        return names or list(_DEFAULT_OUTPUT_STYLES)
+    def setting(self, table: str, key: str, default: str | bool | list[str]) -> Any:
+        """Return a setting such as ``[output] family`` or ``[cell] fit``, or ``default``.
+
+        The type of ``default`` (text, switch or list of texts) is the type the value must
+        have; anything else in the file counts as unset.
+        """
+        section = self.data.get(table)
+        value = section.get(key) if isinstance(section, dict) else None
+        if isinstance(default, bool):
+            return value if isinstance(value, bool) else default
+        if isinstance(default, str):
+            text = value.strip() if isinstance(value, str) else ""
+            return text or default
+        if isinstance(value, list):
+            return [str(item) for item in value if isinstance(item, str)]
+        return default
+
+    def set_setting(
+        self, table: str, key: str, value: str | bool | list[str] | dict[str, str] | None,
+    ) -> None:
+        """Set a setting, or (``None``, or an empty mapping) remove it.
+
+        Call it from inside :meth:`update`. A mapping is written as an inline table.
+        """
+        section = _table(self.data, table)
+        if value is None or (isinstance(value, dict) and not value):
+            section.pop(key, None)
+        elif isinstance(value, dict):
+            inline = tomlkit.inline_table()
+            inline.update(value)
+            section[key] = inline
+        else:
+            section[key] = value
+
+    def directory(self, table: str) -> Path | None:
+        """Return the ``dir`` of ``[fonts]`` or ``[output]`` as a path (None when unset).
+
+        A relative directory is relative to the folder of this file, not to wherever
+        the tool was started.
+        """
+        section = self.data.get(table)
+        value = section.get("dir") if isinstance(section, dict) else None
+        if not isinstance(value, str) or not value.strip():
+            return None
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else (self.path.parent / path).resolve()
+
+    def set_directories(self, *, fonts: Path | None = None, output: Path | None = None) -> None:
+        """Save the fonts and output directories (only those given; unchanged ones are kept)."""
+        self.refresh_if_changed()
+        changed = False
+        for table, directory in (("fonts", fonts), ("output", output)):
+            if directory is None:
+                continue
+            text = _stored_form(directory, self.path.parent)
+            section = _table(self.data, table)
+            if section.get("dir") != text:
+                section["dir"] = text
+                changed = True
+        if changed:
+            self.save()
 
     @property
     def style_overrides(self) -> dict[str, dict[str, str]]:
@@ -223,6 +288,16 @@ class Config:
                 result[str(style)] = {str(family): str(value) for family, value in mapping.items()
                                       if isinstance(value, str) and value}
         return result
+
+    @property
+    def style_names(self) -> dict[str, str]:
+        """The ``[output] style-names`` table: style name -> the name it is built as."""
+        output = self.data.get("output")
+        table = output.get("style-names") if isinstance(output, dict) else None
+        if not isinstance(table, dict):
+            return {}
+        return {str(style): str(name).strip() for style, name in table.items()
+                if isinstance(name, str) and name.strip()}
 
     def set_families(self, group: str, families: Sequence[str]) -> None:
         """Set the inheritance order of a group; an empty list removes the group."""

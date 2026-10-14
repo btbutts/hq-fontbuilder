@@ -171,7 +171,7 @@
 		<p class="mt-4 mb-0 {colors.textSecondary}">{loadError ?? 'loading…'}</p>
 	{:else}
 		<h1 class="mt-4 mb-1 text-[1.4rem] font-semibold">
-			{group.id}{group.atomic ? ' (atomic)' : ''} — combined result
+			{group.id}{group.atomic ? ' (atomic)' : ''} — Combined Result
 		</h1>
 		<p class="mt-0 mb-0 max-w-5xl {colors.textSecondary}">
 			{group.label}; {group.total - current.missing} of {group.total} code points have a glyph.

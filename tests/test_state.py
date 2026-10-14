@@ -18,7 +18,6 @@ COMMENTED = """\
 # my notes
 [output]
 family = "Console Mono"   # the name
-styles = ["Regular", "Bold"]
 
 [cell]
 base = "Alpha"
@@ -47,7 +46,7 @@ def _make_state(tmp_path: Path, config_text: str = COMMENTED) -> ConsoleState:
                codepoints=[ord("M"), ARROW_LEFT, ARROW_UP, ARROW_RIGHT],
                spec=FontSpec(names=NameSpec(style="Bold", weight=700)))
     build_font(fonts / "Gamma" / "Gamma-Regular.ttf", codepoints=[ord("M"), ARROW_RIGHT])
-    path = tmp_path / "composer.toml"
+    path = tmp_path / "font_composer.toml"
     path.write_text(config_text, encoding="utf-8")
     return ConsoleState(fonts, Config.load(path))
 
@@ -228,13 +227,14 @@ def test_hand_edits_survive_a_choice_made_afterwards(tmp_path: Path) -> None:
     """Re-read the file before writing, so a hand edit made while running is kept."""
     state = _make_state(tmp_path)
     path = state.config.path
-    path.write_text(path.read_text(encoding="utf-8").replace('"Bold"]', '"Bold", "Italic"]'),
-                    encoding="utf-8")
+    path.write_text(path.read_text(encoding="utf-8").replace(
+        'family = "Console Mono"', 'family = "Console Mono"\nstyles = ["Regular", "Italic"]'),
+        encoding="utf-8")
     later = path.stat().st_mtime_ns + 1_000_000_000
     os.utime(path, ns=(later, later))
     assert state.choose("arrows", "Beta", "add")[0] == HTTPStatus.OK
     data = tomllib.loads(path.read_text(encoding="utf-8"))
-    assert data["output"]["styles"] == ["Regular", "Bold", "Italic"]
+    assert data["output"]["styles"] == ["Regular", "Italic"]
     assert data["groups"] == {"arrows": ["Beta"]}
 
 
@@ -293,7 +293,7 @@ def test_glyphs_that_leave_the_base_cell_carry_a_fit_plan(tmp_path: Path) -> Non
     # Beta's left arrow is 800 wide in a 600 cell; its up arrow fits
     build_font(fonts / "Beta" / "Beta-Regular.ttf", codepoints=[ord("M"), ARROW_LEFT, ARROW_UP],
                ink={ARROW_LEFT: (-100, 100, 700, 500), ARROW_UP: (100, 0, 500, 700)})
-    path = tmp_path / "composer.toml"
+    path = tmp_path / "font_composer.toml"
     path.write_text('[cell]\nbase = "Alpha"\n', encoding="utf-8")
     state = ConsoleState(fonts, Config.load(path))
     state.choose("arrows", "Beta", "add")
@@ -318,7 +318,7 @@ def test_official_names_are_served_per_group(tmp_path: Path) -> None:
     fonts = tmp_path / "fonts"
     (fonts / "Alpha").mkdir(parents=True)
     build_font(fonts / "Alpha" / "Alpha-Regular.ttf", codepoints=[ord("M")])
-    config_path = tmp_path / "composer.toml"
+    config_path = tmp_path / "font_composer.toml"
     config_path.write_text("", encoding="utf-8")
     state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(names_path))
     status, payload = state.glyph_names("arrows")
@@ -338,7 +338,7 @@ def test_box_lines_that_overshoot_the_block_on_purpose_do_not_shrink_the_family(
     # Beta: a full block exactly its cell, and a vertical line 0.2 em past it both ways
     build_font(fonts / "Beta" / "Beta-Regular.ttf", codepoints=[ord("M"), 0x2588, 0x2502],
                ink={0x2588: (0, -200, 600, 800), 0x2502: (250, -400, 350, 1000)})
-    config_path = tmp_path / "composer.toml"
+    config_path = tmp_path / "font_composer.toml"
     config_path.write_text('[cell]\nbase = "Alpha"\n', encoding="utf-8")
     state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(tmp_path / "none.txt"))
     state.choose("box-drawing", "Beta", "add")  # refused: atomic and incomplete; fit is independent
@@ -347,3 +347,160 @@ def test_box_lines_that_overshoot_the_block_on_purpose_do_not_shrink_the_family(
     line = glyphs["fit"]["Beta-Regular.ttf"][str(0x2502)]
     assert line["sy"] == pytest.approx(1.0)  # not shrunk to swallow the overshoot
     assert line["clip"]  # drawn cut at the cell edge, as the renderer will
+
+
+def test_only_regular_and_bold_are_included_until_the_user_picks_more(tmp_path: Path) -> None:
+    """List what the fonts hold; Regular and Bold are the ones considered by default."""
+    state = _make_state(tmp_path)
+    options = state.snapshot()["styleTypes"]["options"]
+    assert options == [{"name": "Regular", "included": True, "similar": []},
+                       {"name": "Bold", "included": True, "similar": []}]
+    assert state.set_style_included("Bold", included=False)[0] == HTTPStatus.OK
+    snapshot = state.snapshot()
+    assert snapshot["styleMap"]["outputStyles"] == ["Regular"]
+    assert snapshot["styleTypes"]["options"][1]["included"] is False
+    assert state.config.setting("output", "styles", []) == ["Regular"]
+    assert state.set_style_included("Bold", included=True)[0] == HTTPStatus.OK
+    assert state.snapshot()["styleMap"]["outputStyles"] == ["Regular", "Bold"]
+    assert state.set_style_included("Hairline", included=True)[0] == HTTPStatus.BAD_REQUEST
+
+
+def test_similar_styles_are_one_entry_when_consolidated(tmp_path: Path) -> None:
+    """Merge SemiBold, Black (and Medium) into one entry; Thin Italic into Light Italic."""
+    state = _make_state(tmp_path)
+    fonts = tmp_path / "fonts"
+    for style, weight, italic in (("Black", 900, False), ("SemiBold", 600, False),
+                                  ("Thin Italic", 100, True), ("Light Oblique", 300, True)):
+        build_font(fonts / "Gamma" / f"Gamma-{style.replace(' ', '')}.ttf",
+                   codepoints=[ord("M")],
+                   spec=FontSpec(names=NameSpec(style=style, weight=weight, italic=italic)))
+    state.refresh()
+    merged = state.snapshot()["styleTypes"]
+    assert merged["consolidate"] is True
+    by_name = {item["name"]: item for item in merged["options"]}
+    assert by_name["SemiBold"]["similar"] == ["Black"]
+    assert by_name["Light Italic"]["similar"] == ["Light Oblique", "Thin Italic"]
+    assert "Black" not in by_name
+    # including a spelling is including the entry it is merged into, and leaving the entry
+    # out takes the spelling with it
+    assert state.set_style_included("Black", included=True)[0] == HTTPStatus.OK
+    assert "SemiBold" in state.snapshot()["styleMap"]["outputStyles"]
+    assert state.set_style_included("SemiBold", included=False)[0] == HTTPStatus.OK
+    assert "SemiBold" not in state.snapshot()["styleMap"]["outputStyles"]
+    assert state.set_consolidate(enabled=False)[0] == HTTPStatus.OK
+    names = [item["name"] for item in state.snapshot()["styleTypes"]["options"]]
+    assert {"Black", "SemiBold", "Thin Italic", "Light Oblique"} <= set(names)
+    assert state.set_style_included("Black", included=True)[0] == HTTPStatus.OK
+    assert "Black" in state.snapshot()["styleMap"]["outputStyles"]  # on its own, unmerged
+
+
+def _add_weights(state: ConsoleState, family: str, styles: tuple[tuple[str, int], ...]) -> None:
+    """Give a family these upright styles (name, weight), then rescan."""
+    for style, weight in styles:
+        build_font(state.fonts_dir / family / f"{family}-{style}.ttf", codepoints=[ord("M")],
+                   spec=FontSpec(names=NameSpec(family=family, style=style, weight=weight)))
+    state.refresh()
+
+
+def _included(state: ConsoleState) -> set[str]:
+    """Return the names of the style entries the list shows as included."""
+    options = state.snapshot()["styleTypes"]["options"]
+    return {option["name"] for option in options if option["included"]}
+
+
+def test_every_style_of_an_included_entry_stays_included_when_consolidation_is_off(
+    tmp_path: Path,
+) -> None:
+    """Regular (Book, Retina), SemiBold (Medium, Black) and Bold, spelled out one by one."""
+    state = _make_state(tmp_path)
+    (state.fonts_dir / "Delta").mkdir()
+    _add_weights(state, "Delta", (("Regular", 400), ("Book", 400), ("Retina", 400),
+                                  ("Medium", 500), ("SemiBold", 600), ("Black", 900),
+                                  ("Bold", 700)))
+    assert state.set_style_included("SemiBold", included=True)[0] == HTTPStatus.OK
+    assert _included(state) == {"Regular", "SemiBold", "Bold"}
+    assert state.snapshot()["styleMap"]["outputStyles"] == ["Regular", "SemiBold", "Bold"]
+    assert state.set_consolidate(enabled=False)[0] == HTTPStatus.OK
+    spelled = {"Regular", "Book", "Retina", "Medium", "SemiBold", "Black", "Bold"}
+    assert _included(state) == spelled
+    assert set(state.snapshot()["styleMap"]["outputStyles"]) == spelled
+    # each is its own now: leaving one out leaves the others as they were
+    assert state.set_style_included("Black", included=False)[0] == HTTPStatus.OK
+    assert _included(state) == spelled - {"Black"}
+    assert state.set_style_included("Black", included=True)[0] == HTTPStatus.OK
+    assert _included(state) == spelled
+
+
+def test_every_style_of_an_excluded_entry_stays_excluded_when_consolidation_is_off(
+    tmp_path: Path,
+) -> None:
+    """Leaving the SemiBold entry out leaves Medium and Black out, until one is included."""
+    state = _make_state(tmp_path)
+    (state.fonts_dir / "Delta").mkdir()
+    _add_weights(state, "Delta", (("Regular", 400), ("Medium", 500), ("SemiBold", 600),
+                                  ("Black", 900), ("Bold", 700)))
+    assert state.set_style_included("SemiBold", included=True)[0] == HTTPStatus.OK
+    assert state.set_style_included("SemiBold", included=False)[0] == HTTPStatus.OK
+    assert state.set_consolidate(enabled=False)[0] == HTTPStatus.OK
+    assert _included(state) == {"Regular", "Bold"}
+    assert state.set_style_included("Medium", included=True)[0] == HTTPStatus.OK
+    assert _included(state) == {"Regular", "Medium", "Bold"}
+    # on again: an entry is included when any of its styles is
+    assert state.set_consolidate(enabled=True)[0] == HTTPStatus.OK
+    assert _included(state) == {"Regular", "SemiBold", "Bold"}
+
+
+def test_a_list_that_names_only_entries_is_spelled_out_when_consolidation_goes_off(
+    tmp_path: Path,
+) -> None:
+    """A configuration written when only the entry was saved still expands, in the file too."""
+    config = '[output]\nstyles = ["Regular", "SemiBold", "Bold"]\n\n[cell]\nbase = "Alpha"\n'
+    state = _make_state(tmp_path, config)
+    (state.fonts_dir / "Delta").mkdir()
+    _add_weights(state, "Delta", (("Regular", 400), ("Book", 400), ("Medium", 500),
+                                  ("SemiBold", 600), ("Black", 900), ("Bold", 700)))
+    assert _included(state) == {"Regular", "SemiBold", "Bold"}
+    assert state.set_consolidate(enabled=False)[0] == HTTPStatus.OK
+    assert _included(state) == {"Regular", "Book", "Medium", "SemiBold", "Black", "Bold"}
+    data = tomllib.loads((tmp_path / "font_composer.toml").read_text(encoding="utf-8"))
+    assert {"Book", "Medium", "Black"} <= set(data["output"]["styles"])
+    assert data["output"]["consolidate_styles"] is False
+
+
+def test_a_style_can_be_built_under_a_name_of_its_own(tmp_path: Path) -> None:
+    """Keep the style tracked by its name; the custom name is a second, unique, name."""
+    state = _make_state(tmp_path)
+    assert state.choose("arrows", "Beta", "add")[0] == HTTPStatus.OK
+    assert state.set_style_name("Bold", "Strong")[0] == HTTPStatus.OK
+    snapshot = state.snapshot()
+    assert snapshot["styleMap"]["outputStyles"] == ["Regular", "Bold"]  # still tracked as Bold
+    assert snapshot["styleMap"]["names"] == {"Bold": "Strong"}
+    assert snapshot["styleMap"]["entries"]["Bold"]["Beta"]["file"] == "Beta-Bold.ttf"
+    path = tmp_path / "font_composer.toml"
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["output"]["style-names"] == {
+        "Bold": "Strong"}
+    assert "# my notes" in path.read_text(encoding="utf-8")
+    # unique among the names styles go by, whether given by the fonts or by the user
+    for taken in ("Strong", "strong", "bold", "BO LD", "Stro-ng"):
+        status, payload = state.set_style_name("Regular", taken)
+        assert status == HTTPStatus.BAD_REQUEST, taken
+        assert "already in use" in payload["error"]
+    for bad in ("", "  ", "---", "A/B", "x" * 41):
+        assert state.set_style_name("Regular", bad)[0] == HTTPStatus.BAD_REQUEST, bad
+    assert state.set_style_name("Hairline", "Thin")[0] == HTTPStatus.BAD_REQUEST
+    # its own name takes the custom name away, as does null
+    assert state.set_style_name("Bold", "bold")[0] == HTTPStatus.OK
+    assert state.snapshot()["styleMap"]["names"] == {}
+    assert state.set_style_name("Bold", "Strong")[0] == HTTPStatus.OK
+    assert state.set_style_name("Bold", None)[0] == HTTPStatus.OK
+    assert "style-names" not in tomllib.loads(path.read_text(encoding="utf-8"))["output"]
+
+
+def test_a_custom_name_may_not_be_a_name_the_other_listing_shows(tmp_path: Path) -> None:
+    """Medium is merged into SemiBold; calling another style Medium would clash unmerged."""
+    state = _make_state(tmp_path)
+    (state.fonts_dir / "Delta").mkdir()
+    _add_weights(state, "Delta", (("Medium", 500), ("SemiBold", 600)))
+    status, payload = state.set_style_name("Regular", "Medium")
+    assert status == HTTPStatus.BAD_REQUEST
+    assert "already in use" in payload["error"]

@@ -6,7 +6,7 @@ movement (no full-screen mode, so the output stays in the scrollback afterwards)
     The font_composer console is reachable at: http://localhost:8700/
         listening on IP Addresses: 127.0.0.1, ::1
         fonts: /path/to/fonts
-        config: /path/to/composer.toml
+        config: /path/to/font_composer.toml
     <the last request lines, at most 60% of the terminal's height, like tail -f>
     Press 'Q' to quit or 'R' to Reload
 

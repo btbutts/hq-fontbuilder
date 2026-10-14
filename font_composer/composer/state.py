@@ -12,58 +12,31 @@ payload (``configError``) while the last good configuration stays in force.
 from __future__ import annotations
 
 import threading
-import unicodedata
-from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from font_composer.common.composition import GroupComposition, resolve_group
-from font_composer.common.config import Config, ConfigError
-from font_composer.common.fit import (
-    EPS,
-    Box,
-    CellSpec,
-    ClassFit,
-    FitPlan,
-    class_fit,
-    class_groups,
-    fit_class,
-    plan_fit,
-    plan_in_class,
-)
+from font_composer.common.config import DEFAULT_STYLES, Config, ConfigError
+from font_composer.common.fit import EPS, CellSpec, FitPlan
 from font_composer.common.groups import GROUPS, GROUPS_BY_ID, GlyphGroup
-from font_composer.common.ink import read_ink
 from font_composer.common.library import Family, FontLibrary, StyleEntry
 from font_composer.common.names import UnicodeNames
-from font_composer.common.styles import find_style, parse_style_name, resolve_style
+from font_composer.common.planner import cell_of, plan_glyphs
+from font_composer.common.styles import (
+    find_style,
+    is_included,
+    output_styles,
+    parse_style_name,
+    resolve_style,
+    same_style_name,
+    style_name_problem,
+    style_options,
+)
 
 CHOICE_ACTIONS = ("add", "remove", "up", "down", "clear")
 
 _FIT_ALL_STYLES_MAX = 512
 _FIT_REQUEST_MAX = 2048
-
-
-@lru_cache(maxsize=512)
-def _group_ink(
-    path: str, size: int, mtime_ns: int, group_id: str,
-) -> tuple[dict[int, Box], Box | None]:
-    """Read one font file's ink for one group.
-
-    Reading outlines is the slow part of judging fit and a font file rarely changes, so
-    results are kept by ``(file, size, mtime, group)``.
-    """
-    del size, mtime_ns  # part of the cache key only
-    try:
-        return read_ink(Path(path), GROUPS_BY_ID[group_id].codepoint_set)
-    except (OSError, ValueError, KeyError):
-        return {}, None
-
-
-def _cell_of(style: StyleEntry) -> CellSpec:
-    """Return a style file's character cell in em."""
-    metrics = style.info.metrics
-    upm = float(metrics.units_per_em) or 1.0
-    return CellSpec(metrics.cell_advance / upm, metrics.ascent / upm, metrics.descent / upm)
 
 
 def _fit_payload(plan: FitPlan) -> dict[str, Any]:
@@ -209,8 +182,10 @@ class ConsoleState:
             base = self._base_metrics()
             config_error = self.config_error
             overrides = self.config.glyph_overrides
-            output_styles = self.config.output_styles
-            style_overrides = self.config.style_overrides
+            included = self.config.setting("output", "styles", list(DEFAULT_STYLES))
+            consolidate = self.config.setting("output", "consolidate_styles", True)
+            configured = (self.config.style_overrides, self.config.style_names)
+        built_styles = output_styles(library, included, consolidate=consolidate)
         summary = []
         for group in GROUPS:
             order = choices.get(group.id, [])
@@ -240,7 +215,15 @@ class ConsoleState:
                        for family in library.families},
             "choices": choices,
             "glyphOverrides": {f"U+{cp:04X}": family for cp, family in sorted(overrides.items())},
-            "styleMap": _style_map(library, choices, output_styles, style_overrides),
+            "styleTypes": {
+                "consolidate": consolidate,
+                "options": [
+                    {"name": option.name, "included": is_included(option, included),
+                     "similar": list(option.similar)}
+                    for option in style_options(library, consolidate=consolidate)
+                ],
+            },
+            "styleMap": _style_map(library, choices, built_styles, configured),
             "base": base,
             "summary": summary,
             "problems": [{"path": str(error.path), "reason": error.reason}
@@ -349,67 +332,16 @@ class ConsoleState:
         """Return the cell of the configured base family (None when there is none)."""
         family = self.library.family(self.config.base_family)
         reference = family.regular_style() if family is not None else None
-        return _cell_of(reference) if reference is not None else None
-
-    @staticmethod
-    def _ink_of(
-        style: StyleEntry, group: GlyphGroup,
-    ) -> tuple[dict[int, Box], Box | None]:
-        """Return the ink boxes of a style file's glyphs of one group (cached)."""
-        path = style.info.path
-        try:
-            stat = path.stat()
-        except OSError:
-            return {}, None
-        return _group_ink(str(path), stat.st_size, stat.st_mtime_ns, group.id)
-
-    def _class_fit(self, family: Family, name: str, base: CellSpec) -> ClassFit | None:
-        """Find the shared scale of a family's glyphs in one category class.
-
-        It is taken from the family's reference style over every glyph the family has in
-        the class, so it does not depend on which families a group inherits from, and
-        every style of the family gets the same one.
-        """
-        reference = family.regular_style()
-        if reference is None:
-            return None
-        inks: list[Box] = []
-        frame = None
-        for group_id in class_groups(name):
-            boxes, frame = self._ink_of(reference, GROUPS_BY_ID[group_id])
-            inks.extend(boxes.values())
-        if name == "connectors" and frame is not None:
-            # Box lines may run past the full block on purpose, so that neighbours
-            # overlap (Fira Code's by 0.2 em); the renderer cuts them at the cell. The
-            # family is fitted by its frame, never by the overshoot of its lines.
-            inks = [frame]
-        return class_fit(name, inks, _cell_of(reference), frame, base)
+        return cell_of(reference) if reference is not None else None
 
     def fit_plans(
         self, family: Family, group: GlyphGroup, style: StyleEntry, codepoints: list[int],
     ) -> dict[int, FitPlan]:
-        """Plan the fit of some glyphs of one style file onto the base cell.
-
-        A glyph of a category fitted together (text, box drawing) always gets the shared
-        scale of its family; any other is returned only when it is not simply inside.
-        """
+        """Plan the fit of some glyphs of one style file onto the base cell."""
         base = self._base_cell()
         if base is None:
             return {}
-        ink, frame = self._ink_of(style, group)
-        donor = _cell_of(style)
-        name = fit_class(group.id)
-        shared = self._class_fit(family, name, base) if name is not None else None
-        plans: dict[int, FitPlan] = {}
-        for codepoint in codepoints:
-            if shared is not None:
-                plans[codepoint] = plan_in_class(ink.get(codepoint), shared, base)
-                continue
-            letter = unicodedata.category(chr(codepoint))[0] in "LM"
-            plan = plan_fit(ink.get(codepoint), donor, frame, base, on_baseline=letter)
-            if plan.kind != "fits":
-                plans[codepoint] = plan
-        return plans
+        return plan_glyphs(family, group, style, codepoints, base)
 
     def glyph_names(self, group_id: str) -> tuple[int, dict[str, Any]]:
         """Return the official names of the code points of a group that have one."""
@@ -470,6 +402,97 @@ class ConsoleState:
             self.version += 1
         return self.composition(group.id)
 
+    def set_style_included(self, style: str, *, included: bool) -> tuple[int, dict[str, Any]]:
+        """Bring a style into the considered styles (``[output] styles``), or leave it out.
+
+        What is listed is one entry (``SemiBold``) that may stand for several spellings
+        (``Medium``, ``Black``). The list in the file always names the spellings themselves,
+        so including an entry includes each of them and excluding it excludes each of them:
+        listing the styles unconsolidated afterwards shows them as the user left them.
+        """
+        with self._lock:
+            self._reload_config()
+            consolidate = self.config.setting("output", "consolidate_styles", True)
+            option = next((item for item in style_options(self.library, consolidate=consolidate)
+                           if style in item.members), None)
+            if option is None:
+                return 400, {"error": f"no font has a {style!r} style"}
+
+            def mutate(config: Config) -> None:
+                names = [name for name in config.setting("output", "styles", list(DEFAULT_STYLES))
+                         if name not in option.members]
+                config.set_setting("output", "styles",
+                                   [*names, *option.members] if included else names)
+
+            try:
+                self.config.update(mutate)
+            except ConfigError as exc:
+                return 500, {"error": str(exc)}
+            self.version += 1
+        return 200, self.snapshot()
+
+    def set_consolidate(self, *, enabled: bool) -> tuple[int, dict[str, Any]]:
+        """Show similar styles as one entry (or each as the fonts spell it) in the list.
+
+        Before the listing changes, every entry that is included is spelled out in
+        ``[output] styles``, so that each style merged into it stays included on its own
+        (and one that was left out stays out), whichever way the toggle goes.
+        """
+        with self._lock:
+            self._reload_config()
+
+            def mutate(config: Config) -> None:
+                current = config.setting("output", "consolidate_styles", True)
+                included = config.setting("output", "styles", list(DEFAULT_STYLES))
+                spelled = list(included)
+                for option in style_options(self.library, consolidate=current):
+                    if is_included(option, included):
+                        spelled.extend(name for name in option.members if name not in spelled)
+                config.set_setting("output", "styles", spelled)
+                config.set_setting("output", "consolidate_styles", enabled)
+
+            try:
+                self.config.update(mutate)
+            except ConfigError as exc:
+                return 500, {"error": str(exc)}
+            self.version += 1
+        return 200, self.snapshot()
+
+    def set_style_name(self, style: str, name: str | None) -> tuple[int, dict[str, Any]]:
+        """Build an output style under another name (None: the name the fonts give it).
+
+        The style stays tracked by its own name; the custom name is only what the build writes
+        and the console shows. It must be unique, see :func:`style_name_problem`.
+        """
+        with self._lock:
+            self._reload_config()
+            included = self.config.setting("output", "styles", list(DEFAULT_STYLES))
+            consolidate = self.config.setting("output", "consolidate_styles", True)
+            if style not in output_styles(self.library, included, consolidate=consolidate):
+                return 400, {"error": f"{style!r} is not one of the output styles"}
+            value = None
+            if name is not None:
+                problem = style_name_problem(self.library, style, name,
+                                             self.config.style_names)
+                if problem is not None:
+                    return 400, {"error": problem}
+                value = None if same_style_name(name, style) else " ".join(name.split())
+
+            def mutate(config: Config) -> None:
+                names = config.style_names
+                if value is None:
+                    names.pop(style, None)
+                else:
+                    names[style] = value
+                config.set_setting("output", "style-names", names)
+
+            try:
+                self.config.update(mutate)
+            except ConfigError as exc:
+                return 500, {"error": str(exc)}
+            self.version += 1
+        return 200, self.snapshot()
+
     def set_style(
         self, style: str, family_label: str, file_name: str | None,
     ) -> tuple[int, dict[str, Any]]:
@@ -477,7 +500,9 @@ class ConsoleState:
         with self._lock:
             self._reload_config()
             library = self.library
-            if style not in self.config.output_styles:
+            included = self.config.setting("output", "styles", list(DEFAULT_STYLES))
+            consolidate = self.config.setting("output", "consolidate_styles", True)
+            if style not in output_styles(library, included, consolidate=consolidate):
                 return 400, {"error": f"{style!r} is not one of the output styles"}
             family = library.family(family_label)
             if family is None:
@@ -616,17 +641,21 @@ def _composition_payload(
 def _style_map(
     library: FontLibrary,
     choices: dict[str, list[str]],
-    output_styles: list[str],
-    overrides: dict[str, dict[str, str]],
+    styles: list[str],
+    configured: tuple[dict[str, dict[str, str]], dict[str, str]],
 ) -> dict[str, Any]:
-    """Resolve every output style for every family that is used by some group."""
+    """Resolve every output style for every family that is used by some group.
+
+    ``configured`` is the ``[styles.<Output>]`` files and the custom style names.
+    """
+    overrides, names = configured
     used: list[str] = []
     for order in choices.values():
         for label in order:
             if label not in used and library.family(label) is not None:
                 used.append(label)
     families: dict[str, list[dict[str, Any]]] = {}
-    entries: dict[str, dict[str, Any]] = {style: {} for style in output_styles}
+    entries: dict[str, dict[str, Any]] = {style: {} for style in styles}
     for label in used:
         family = library.family(label)
         if family is None:
@@ -637,7 +666,7 @@ def _style_map(
              "italic": style.info.names.italic}
             for style in family.styles
         ]
-        for style_name in output_styles:
+        for style_name in styles:
             choice = resolve_style(family, parse_style_name(style_name),
                                    overrides.get(style_name, {}).get(label))
             entries[style_name][label] = {
@@ -645,4 +674,5 @@ def _style_map(
                 "reason": choice.reason,
                 "overridden": choice.overridden,
             }
-    return {"outputStyles": output_styles, "families": families, "entries": entries}
+    return {"outputStyles": styles, "families": families, "entries": entries,
+            "names": {style: names[style] for style in styles if style in names}}

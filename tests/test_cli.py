@@ -8,17 +8,25 @@ from typing import TYPE_CHECKING
 import pytest
 
 from font_composer.__main__ import main, parse_args
-from font_composer.common.paths import DEFAULT_CONFIG, DEFAULT_FONTS_DIR, PROJECT_ROOT
+from font_composer.common.paths import (
+    DEFAULT_CONFIG,
+    DEFAULT_FONTS_DIR,
+    DEFAULT_OUTPUT_DIR,
+    PROJECT_ROOT,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 
 def test_compose_needs_no_options() -> None:
-    """Start with the fonts/ and composer.toml next to the font_composer package."""
+    """Start with the config next to the font_composer package; directories come from it."""
     args = parse_args(["compose"])
-    assert args.fonts_dir == DEFAULT_FONTS_DIR == PROJECT_ROOT / "fonts"
-    assert args.config == DEFAULT_CONFIG == PROJECT_ROOT / "composer.toml"
+    assert DEFAULT_FONTS_DIR == PROJECT_ROOT / "fonts"
+    assert DEFAULT_OUTPUT_DIR == PROJECT_ROOT / "output"
+    assert args.fonts_dir is None
+    assert args.output_dir is None
+    assert args.config == DEFAULT_CONFIG == PROJECT_ROOT / "font_composer.toml"
     assert args.host == "localhost"
     assert args.port is None
     assert (PROJECT_ROOT / "font_composer").is_dir()
@@ -65,3 +73,31 @@ def test_missing_fonts_dir_is_reported(tmp_path: Path, capsys: pytest.CaptureFix
                    "--config", str(tmp_path / "c.toml")])
     assert status == 1
     assert "fonts directory not found" in capsys.readouterr().err
+
+
+def test_build_needs_no_options() -> None:
+    """Build with the same config, the directories of the config, and ask on a gap."""
+    args = parse_args(["build"])
+    assert args.config == DEFAULT_CONFIG
+    assert args.fonts_dir is None
+    assert args.output_dir is None
+    assert args.on_missing == "ask"
+
+
+def test_compose_saves_the_directories_it_is_given(tmp_path: Path) -> None:
+    """Keep ``--fonts-dir`` and ``--output-dir`` in the config for the build to read."""
+    fonts = tmp_path / "myfonts"
+    fonts.mkdir()
+    config_path = tmp_path / "c.toml"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as taken:
+        taken.bind(("127.0.0.1", 0))
+        taken.listen()
+        port = taken.getsockname()[1]
+        status = main(["compose", "--fonts-dir", str(fonts), "--output-dir",
+                       str(tmp_path / "made"), "--config", str(config_path),
+                       "--port", str(port)])
+    assert status == 1  # the port was taken: nothing was started, but the config was written
+    text = config_path.read_text(encoding="utf-8")
+    assert 'dir = "myfonts"' in text
+    assert 'dir = "made"' in text
+    assert not (tmp_path / "made").exists()  # the console never creates the output directory

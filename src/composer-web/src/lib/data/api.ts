@@ -79,12 +79,29 @@ export interface StyleEntry {
 	overridden: boolean;
 }
 
+export interface StyleType {
+	/** a style as one entry: "Bold", "Light Italic" (or as a font spells it, unconsolidated) */
+	name: string;
+	/** false until the user includes it: it gets no column and is not built */
+	included: boolean;
+	/** the other spellings merged into this entry ("Heavy" under "Black") */
+	similar: string[];
+}
+
+export interface StyleTypes {
+	/** similar styles are listed as one entry */
+	consolidate: boolean;
+	options: StyleType[];
+}
+
 export interface StyleMap {
 	outputStyles: string[];
 	/** families used by some group -> their style files */
 	families: Record<string, StyleFileInfo[]>;
 	/** output style -> family -> the file picked */
 	entries: Record<string, Record<string, StyleEntry>>;
+	/** output style -> the name the user gave it (only styles that have one): what is built */
+	names: Record<string, string>;
 }
 
 export interface ProblemFont {
@@ -104,11 +121,13 @@ export interface ComposerState {
 	choices: Record<string, string[]>;
 	/** "U+2714" -> the family pinned to that code point */
 	glyphOverrides: Record<string, string>;
+	/** every style the fonts hold, upright first, light to heavy */
+	styleTypes: StyleTypes;
 	styleMap: StyleMap;
 	base: BaseMetrics | null;
 	summary: SummaryEntry[];
 	problems: ProblemFont[];
-	/** set while composer.toml does not parse; the last good configuration stays in force */
+	/** set while font_composer.toml does not parse; the last good configuration stays in force */
 	configError: string | null;
 }
 
@@ -271,4 +290,19 @@ export async function postStyle(
 	file: string | null
 ): Promise<ChooseResult> {
 	return result(await post('/api/style', { style, family, file }));
+}
+
+/** Consider a style type in the style mapping and the build, or leave it out. */
+export async function postStyleType(style: string, included: boolean): Promise<ChooseResult> {
+	return result(await post('/api/style-type', { style, included }));
+}
+
+/** List similar styles as one entry, or each as the fonts spell it. */
+export async function postStyleConsolidate(enabled: boolean): Promise<ChooseResult> {
+	return result(await post('/api/style-consolidate', { enabled }));
+}
+
+/** Build an output style under another name; `null` goes back to the name the fonts give. */
+export async function postStyleName(style: string, name: string | null): Promise<ChooseResult> {
+	return result(await post('/api/style-name', { style, name }));
 }

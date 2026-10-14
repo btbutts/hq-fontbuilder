@@ -20,8 +20,8 @@ The two components map to two commands:
   families, lets you inspect every glyph of a group drawn by each donor font inside
   the target cell, and records your choices in the output `.toml` config as you make
   them.
-* **`build` — the font-builder** (not implemented yet; the command exists and says
-  so). Will read the `.toml` config and write one TTF per requested style.
+* **`build` — the font-builder.** Reads the `.toml` config and writes one TTF per
+  requested style, plus a `NOTICE` file (see "Building the fonts" below).
 
 A third command, **`inspect`**, prints one font's metadata and per-group coverage on
 the command line — the quick way to reproduce the coverage measurements for any file.
@@ -40,7 +40,10 @@ fonts/                     <- next to font_composer/; empty in a release
 
 `fonts/` sits next to the `font_composer/` package (the directory is part of every
 checkout and release, empty; its contents are never committed or shipped) and is the
-directory the console watches unless you pass `--fonts-dir`.
+directory the console watches unless the config (`[fonts] dir`) or `--fonts-dir` names
+another. **This project ships no fonts**; the families named in this document are examples,
+and you supply your own. `output/`, next to it, is where `build` writes the composed fonts
+(also empty, also never committed).
 One sub-folder per family; any TTF/OTF dropped into a folder belongs to that family.
 Files are picked up automatically while the console runs (polled once a second, no
 dependencies). Files that cannot be read are listed on the main page with the reason —
@@ -81,8 +84,9 @@ examples):
 
 | Option | Default |
 |---|---|
-| `--fonts-dir DIR` | `fonts/` next to `font_composer/` |
-| `--config FILE` | `composer.toml` next to `font_composer/` (untracked: it is in `.gitignore`) |
+| `--fonts-dir DIR` | the config's `[fonts] dir`, else `fonts/` next to `font_composer/`; saved to the config |
+| `--output-dir DIR` | the config's `[output] dir`, else `output/` next to `font_composer/`; saved to the config, **not** created (the build does that) |
+| `--config FILE` | `font_composer.toml` next to `font_composer/` (untracked: it is in `.gitignore`) |
 | `--host HOST` | `localhost`, which is both `127.0.0.1` and `::1` |
 | `--port PORT` | chosen automatically, see below |
 | `--monitor` | off: on a terminal, show the scrolling tail described below |
@@ -94,7 +98,7 @@ open first:
 The font_composer console is reachable at: http://localhost:8710/
 	listening on IP Addresses: 127.0.0.1, ::1
 	fonts: /path/to/fonts
-	config: /path/to/composer.toml
+	config: /path/to/font_composer.toml
 ```
 
 Below them, like `tail -f`, are the last request lines (`::1 - - [..] "GET /fonts/... HTTP/1.1"
@@ -151,7 +155,7 @@ In the console:
   families one after the other: the first is the group's first choice, and each following
   one fills in the code points the earlier ones have no glyph for. A code point that
   several families have is taken from the first of them. Every change is written to
-  `composer.toml` immediately. Atomic groups (`box-drawing`, `block-elements`) take one
+  `font_composer.toml` immediately. Atomic groups (`box-drawing`, `block-elements`) take one
   family only, and a complete one.
 * The **Composition so far** table at the bottom of the main page has one row per glyph
   category (`Glyph Categories`) and its families in order (`Font Inheritance Order`),
@@ -176,7 +180,7 @@ In the console:
 
 ## _The configuration file_
 
-`composer.toml` is created with sensible defaults on first run. The console writes
+`font_composer.toml` is created with sensible defaults on first run. The console writes
 `[groups]`, `[glyphs]`, `[styles.*]` and `[server] port`; everything else is yours to
 hand-edit, comments included, and survives the console's saves. You may edit the file
 while the console runs: it notices the change (and a file that does not parse is
@@ -185,7 +189,13 @@ reported on the main page and never overwritten):
 ```toml
 [output]
 family = "Console Mono"
-styles = ["Regular", "Bold"]       # the output styles; names such as "Bold Italic" work too
+dir = "output"                     # where `build` writes the fonts (compose --output-dir)
+styles = ["Regular", "Bold"]       # the styles built: Regular and Bold until you pick more
+consolidate_styles = true          # how the style list is shown (similar styles as one entry)
+style-names = { Oblique = "Italic" }   # optional: a style built under another name (see below)
+
+[fonts]
+dir = "fonts"                      # where the source fonts are (compose --fonts-dir)
 
 [cell]
 base = "FiraCode"                  # family that defines the cell: advance, ascent, descent
@@ -248,6 +258,48 @@ frame and cut at the cell edge, not shrunk. The preview is a visualisation: it d
 drawing must also *join* its neighbours the build needs more than this (see the plan
 document, "Glyph fitting").
 
+### Building the fonts
+
+```sh
+.fontbuilder.venv/bin/python -m font_composer build   # font_composer.toml: fonts/ -> output/
+.fontbuilder.venv/bin/python -m font_composer build --output-dir DIR --on-missing nearest
+```
+
+The source and output directories come from the config the console wrote (`[fonts] dir`,
+`[output] dir`); `--fonts-dir` and `--output-dir` override them, and the output directory
+is created when it does not exist. One unhinted TrueType file per style you included (**Style Mapping > the edit button in the table's header** lists
+them, merged by weight and slant when **Consolidate Similar Font Styles** is on, and
+includes or excludes them; Regular and Bold are included to begin with), named `<Family>-<Style>.ttf`
+(`Console Mono` becomes `ConsoleMono-Regular.ttf`), and a `NOTICE` file next to them that
+lists every font the result is made of with its copyright and licence text.
+
+* **Where glyphs come from.** Each group's inheritance order and the `[glyphs]` pins decide
+  the donor of a code point (the same resolution the console shows); it is drawn from the
+  donor's file for *that output style*, fitted to the base cell by the plan the console
+  previews, and given the base cell's advance. Every code point no group serves keeps the
+  **base family's own glyph** (so the font is complete, not just the chosen groups). A
+  group with more families than one falls back to the next family when a style file lacks
+  a glyph; an atomic group never mixes, and half a box-drawing set refuses the build.
+* **Box drawing joins.** All box and block glyphs of a donor get one map that puts the
+  donor's frame exactly on the base cell; what overshoots on purpose is cut at the cell
+  edge. The build then checks that each connector still reaches the edges it was drawn to.
+* **A style a family does not have.** Matching is exact in weight and slant (the rules
+  below). When a family has no Bold, the build asks (on a terminal): use a file of the
+  family as it is (the nearest weight is offered), **synthesize** a bold from the nearest
+  lighter file (the outline is redrawn at small offsets), or stop. The answer is written
+  to `[styles.<Output>]`, as a file name, `synthesize`, or `synthesize:<file>`, so it is
+  asked once. `--on-missing nearest|synthesize|fail` decides without asking; without a
+  terminal the build never guesses and stops.
+* **Variable fonts** are instanced at the output style's weight. TrueType outlines are
+  made from CFF donors with cubic-to-quadratic conversion.
+* **Verification** reopens each written file and fails the build (and deletes the file)
+  on: a code point map that differs from the plan, a glyph whose advance is not the cell,
+  a letter of a donor cut off by the cell, a connector that no longer joins. Letters of
+  the base font itself that leave its cell are reported, not changed.
+* **Not yet:** `[group-options.*]` (per-group scale and alignment), kerning and ligatures
+  (dropped on purpose: terminals do no shaping), hinting, and glyph-level checks by
+  rendering with FreeType.
+
 ### How style files are matched
 
 Style *names* differ between families for what is the same style (`Oblique` and
@@ -263,11 +315,31 @@ by these rules, in order:
 2. only files with the **same slant** are considered: an italic style is never served by
    an upright file, and nothing is slanted artificially; a family without an italic has
    no donor for an italic output style until you map one;
-3. among them the weight **equal** to the output style's, else the **nearest**; two files
-   equally near: the lighter one.
+3. among them the weight **equal** to the output style's, else the nearest **similar**
+   weight, else the **nearest** of all; two files equally near: the lighter one.
 
-Medium (500) and Black (900) are different weights and are never folded together. The
-Style mapping dialog shows the result and the reason for every pair. (Variable fonts are
+Similar weights are one family of styles: **Thin, ExtraLight and Light**, and **Medium,
+SemiBold and Black** (listed as **SemiBold**; upright or italic alike, and `Oblique` is
+`Italic`). Regular, Bold and
+ExtraBold stand alone. The *Consolidate Similar Font Styles* switch uses the same families
+for both the list and the style mapping: with it on, an included entry is one output
+style (including Black builds SemiBold), so the mapping has one column for it and picks
+the best file of each family by the rules above. A family with no
+Bold gets a prompt (see "Building the fonts"); one with a SemiBold for a Medium does not. The
+Style mapping dialog shows the result and the reason for every pair.
+
+Including or excluding an entry applies to every style merged into it, and switching the
+switch off keeps each of them as it was: with *Light Italic* included, *ExtraLight Italic*
+and *Thin Italic* are included too, each on its own once the entries are spelled out
+(`[output] styles` then names all of them), and a style left out stays out.
+
+**Renaming a style.** The pencil in a column header of the Style mapping dialog gives that
+output style another name (`Oblique` built as `Italic`). The name the fonts give stays the
+key everything is tracked by (`[styles.<Output>]`, `styles`); the new name, saved as
+`[output] style-names`, is what the font file, its name table and the console show, and it
+wins over the original in the build. It must be unique: not the name of another style
+(either listing) and not another style's custom name. Weight and slant still come from the
+original style, so a style renamed `Slanted` is still flagged italic. (Variable fonts are
 read as their default instance for now; the build will instantiate them.)
 
 ## Development
@@ -320,7 +392,7 @@ The build wipes and rewrites that directory, so you choose when to recompile.
 
 For frontend development only, `npm run dev` gives Vite's live-reload dev server; it
 proxies `/api` and `/fonts` to the Python console on `localhost`, which must run
-alongside it. The port is read from `composer.toml` (`[server] port`, saved by the
+alongside it. The port is read from `font_composer.toml` (`[server] port`, saved by the
 console) or from the `COMPOSER_PORT` environment variable. This is optional — plain `./compile-spa.sh` plus the Python console is
 the normal loop.
 

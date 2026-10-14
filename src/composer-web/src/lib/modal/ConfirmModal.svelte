@@ -1,6 +1,7 @@
 <script lang="ts">
 	import CtrlButton from '../button/CtrlButton.svelte';
 	import { colors } from '../styles.svelte';
+	import { lockScroll } from './scrollLock';
 
 	interface Props {
 		title: string;
@@ -20,6 +21,8 @@
 		onconfirm,
 		oncancel
 	}: Props = $props();
+
+	$effect(() => lockScroll());
 </script>
 
 <svelte:window onkeydown={(event) => event.key === 'Escape' && oncancel()} />

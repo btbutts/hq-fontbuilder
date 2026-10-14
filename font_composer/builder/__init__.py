@@ -1,1 +1,1 @@
-"""Build-time tools: read composer.toml and emit the composed TTFs (future pass)."""
+"""Build mode: read font_composer.toml and write the composed TrueType fonts."""

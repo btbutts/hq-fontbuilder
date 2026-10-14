@@ -24,6 +24,11 @@ Routes:
   the group's families, or (null) go back to the inheritance order.
 * ``POST /api/style`` ``{style, family, file|null}`` — map an output style of a family
   to one of its style files, or (null) back to the default rules.
+* ``POST /api/style-type`` ``{style, included}`` — consider a style (``Bold``, ``Light
+  Italic`` ...) in the build and the style mapping, or leave it out (``[output] styles``).
+* ``POST /api/style-consolidate`` ``{enabled}`` — list similar styles as one entry.
+* ``POST /api/style-name`` ``{style, name|null}`` — build an output style under another
+  name (``[output] style-names``; it must be unique), or (null) under its own again.
 
   Every POST saves the configuration and bumps the version, and its body must be sent
   as ``application/json``: a cross-site page cannot do that without a CORS preflight,
@@ -218,7 +223,10 @@ class _Handler(BaseHTTPRequestHandler):
         """Dispatch POST requests: choose, glyph and style (all JSON, all state changes)."""
         path = urlparse(self.path).path
         handlers = {"/api/choose": self._post_choose, "/api/glyph": self._post_glyph,
-                    "/api/style": self._post_style}
+                    "/api/style": self._post_style,
+                    "/api/style-type": self._post_style_type,
+                    "/api/style-consolidate": self._post_style_consolidate,
+                    "/api/style-name": self._post_style_name}
         handler = handlers.get(path)
         if handler is None:
             self._send_json({"error": f"not found: {path}"}, status=404)
@@ -255,6 +263,27 @@ class _Handler(BaseHTTPRequestHandler):
         if file_name is not None and not isinstance(file_name, str):
             return 400, {"error": "file must be a string or null"}
         return self._state.set_style(style, family, file_name)
+
+    def _post_style_type(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """``{style, included}``: consider a style type or leave it out."""
+        style, included = body.get("style"), body.get("included")
+        if not isinstance(style, str) or not isinstance(included, bool):
+            return 400, {"error": "body must be {style: str, included: bool}"}
+        return self._state.set_style_included(style, included=included)
+
+    def _post_style_consolidate(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """Handle ``{enabled}``: list similar styles as one entry, or as the fonts spell them."""
+        enabled = body.get("enabled")
+        if not isinstance(enabled, bool):
+            return 400, {"error": "body must be {enabled: bool}"}
+        return self._state.set_consolidate(enabled=enabled)
+
+    def _post_style_name(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """``{style, name|null}``: give an output style a custom name, or take it away."""
+        style, name = body.get("style"), body.get("name")
+        if not isinstance(style, str) or not (name is None or isinstance(name, str)):
+            return 400, {"error": "body must be {style: str, name: str|null}"}
+        return self._state.set_style_name(style, name)
 
     def _get_static(self, path: str) -> None:
         """Serve a static file by URL path, falling back to ``index.html``.

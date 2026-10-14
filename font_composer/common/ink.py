@@ -22,6 +22,18 @@ if TYPE_CHECKING:
 FULL_BLOCK = 0x2588
 
 
+def glyph_box(glyph_set: Any, name: str, upm: float) -> Box | None:
+    """Return the ink of one glyph of a glyph set in em (None when it has no outline)."""
+    if name not in glyph_set:
+        return None
+    pen = BoundsPen(glyph_set)
+    glyph_set[name].draw(pen)
+    if pen.bounds is None:
+        return None
+    x0, y0, x1, y1 = pen.bounds
+    return Box(x0 / upm, y0 / upm, x1 / upm, y1 / upm)
+
+
 def read_ink(path: Path, codepoints: Iterable[int]) -> tuple[dict[int, Box], Box | None]:
     """Return ``({code point: ink box}, frame)`` for the code points the font has.
 
@@ -37,14 +49,7 @@ def read_ink(path: Path, codepoints: Iterable[int]) -> tuple[dict[int, Box], Box
 
         def bounds(codepoint: int) -> Box | None:
             name = cmap.get(codepoint)
-            if name is None or name not in glyph_set:
-                return None
-            pen = BoundsPen(glyph_set)
-            glyph_set[name].draw(pen)
-            if pen.bounds is None:
-                return None
-            x0, y0, x1, y1 = pen.bounds
-            return Box(x0 / upm, y0 / upm, x1 / upm, y1 / upm)
+            return glyph_box(glyph_set, name, upm) if name is not None else None
 
         result = {}
         for codepoint in codepoints:
