@@ -40,6 +40,7 @@ from font_composer.common.styles import find_style, parse_style_name, resolve_st
 CHOICE_ACTIONS = ("add", "remove", "up", "down", "clear")
 
 _FIT_ALL_STYLES_MAX = 512
+_FIT_REQUEST_MAX = 2048
 
 
 @lru_cache(maxsize=512)
@@ -265,15 +266,43 @@ class ConsoleState:
             style.file_name: [cp for cp in points if cp in style.info.codepoints]
             for style in family.styles
         }
-        reference = family.regular_style()
         fits: dict[str, dict[str, Any]] = {}
         for style in family.styles:
-            # a group too large to draw whole is judged on the reference style only
-            if group.total > _FIT_ALL_STYLES_MAX and style is not reference:
+            # a group too large to draw whole is fitted on request, a page of glyphs at a
+            # time, see fit()
+            if group.total > _FIT_ALL_STYLES_MAX:
                 continue
             plans = self.fit_plans(family, group, style, present[style.file_name])
             fits[style.file_name] = {str(cp): _fit_payload(plan) for cp, plan in plans.items()}
         return 200, {"family": family.label, "group": group.id, "styles": present, "fit": fits}
+
+    def fit(
+        self, family_label: str, group_id: str, file_name: str, codepoints: list[int],
+    ) -> tuple[int, dict[str, Any]]:
+        """Plan the fit of some glyphs of one style file (for a group too large to draw whole).
+
+        Only the code points the style holds are planned; a glyph that simply fits has no
+        entry, as in :meth:`glyphs`.
+        """
+        group = GROUPS_BY_ID.get(group_id)
+        if group is None:
+            return 400, {"error": f"unknown group: {group_id!r}"}
+        if len(codepoints) > _FIT_REQUEST_MAX:
+            return 400, {"error": f"at most {_FIT_REQUEST_MAX} code points at a time"}
+        with self._lock:
+            family = self.library.family(family_label)
+        if family is None:
+            return 404, {"error": f"unknown family: {family_label!r}"}
+        style = next((item for item in family.styles if item.file_name == file_name), None)
+        if style is None:
+            return 404, {"error": f"unknown style file: {file_name!r}"}
+        wanted = [
+            cp for cp in codepoints
+            if cp in style.info.codepoints and any(low <= cp <= high for low, high in group.ranges)
+        ]
+        plans = self.fit_plans(family, group, style, wanted)
+        fit = {str(cp): _fit_payload(plan) for cp, plan in plans.items()}
+        return 200, {"family": family.label, "group": group.id, "file": file_name, "fit": fit}
 
     def choose(
         self, group_id: str, family_label: str | None, action: str,

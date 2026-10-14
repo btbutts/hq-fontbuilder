@@ -131,8 +131,8 @@ export const colors = {
 	/** Outline drawn round a glyph cell that has keyboard focus. */
 	focusOutline: 'focus-visible:outline-[#1b4965] dark:focus-visible:outline-[#0c5f9a]',
 
-	/** Fill of every switch (the light/dark, "Preview unfitted glyphs", "Enable glyph
-	 *  wrapping" and "use this family for this group" toggles) while it is on. */
+	/** Fill of every switch (the light/dark, "Preview Unfitted Glyphs", "Enable Glyph
+	 *  Wrapping" and "Use this Font Family for the … Group" toggles) while it is on. */
 	buttonAccent: 'bg-[#b02e2e] dark:bg-[#d63838]',
 
 	/** Track of a switch while it is off. */

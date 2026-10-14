@@ -124,6 +124,20 @@ def test_a_family_is_shown_by_the_name_its_font_carries(tmp_path: Path) -> None:
     assert families["Alpha"] == "Test Family"  # a fixture font that names itself nothing special
 
 
+def test_fit_is_planned_for_the_requested_glyphs_of_one_style_file(tmp_path: Path) -> None:
+    """Answer ``fit`` for the code points asked for, in any style file; refuse bad requests."""
+    state = _make_state(tmp_path)
+    status, payload = state.fit("Beta", "arrows", "Beta-Bold.ttf", [ARROW_LEFT, ARROW_UP, 0x41])
+    assert status == HTTPStatus.OK
+    assert payload["file"] == "Beta-Bold.ttf"
+    assert set(payload["fit"]) <= {str(ARROW_LEFT), str(ARROW_UP)}  # 0x41 is not an arrow
+    assert state.fit("Beta", "arrows", "Nope.ttf", [ARROW_LEFT])[0] == HTTPStatus.NOT_FOUND
+    assert state.fit("Nobody", "arrows", "Beta-Bold.ttf", [])[0] == HTTPStatus.NOT_FOUND
+    assert state.fit("Beta", "nonsense", "Beta-Bold.ttf", [])[0] == HTTPStatus.BAD_REQUEST
+    too_many = list(range(3000))
+    assert state.fit("Beta", "arrows", "Beta-Bold.ttf", too_many)[0] == HTTPStatus.BAD_REQUEST
+
+
 def test_the_composition_fills_gaps_in_order_and_counts_sources(tmp_path: Path) -> None:
     """Take each glyph from the first family that has it; the rest fill in."""
     state = _make_state(tmp_path)

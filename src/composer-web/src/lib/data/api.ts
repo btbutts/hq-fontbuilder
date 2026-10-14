@@ -207,6 +207,27 @@ export async function fetchGlyphs(family: string, group: string): Promise<Glyphs
 	return (await response.json()) as GlyphsPayload;
 }
 
+export interface FitPayload {
+	family: string;
+	group: string;
+	file: string;
+	/** code point -> fit, for those of the asked-for glyphs that are not simply inside */
+	fit: Record<string, FitInfo>;
+}
+
+/** The fit of some glyphs of one style file: for a group too large to be fitted whole. */
+export async function fetchFit(
+	family: string,
+	group: string,
+	file: string,
+	codepoints: number[]
+): Promise<FitPayload> {
+	const query = new URLSearchParams({ family, group, file, codepoints: codepoints.join(',') });
+	const response = await fetch(`/api/fit?${query}`);
+	if (!response.ok) throw new Error(`/api/fit: ${response.status}`);
+	return (await response.json()) as FitPayload;
+}
+
 async function post(path: string, body: unknown): Promise<Response> {
 	return fetch(path, {
 		method: 'POST',

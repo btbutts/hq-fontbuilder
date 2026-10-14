@@ -9,6 +9,9 @@ Routes:
   of the configuration file).
 * ``GET /api/glyphs?family=F&group=G`` — for each style file of a family, the code
   points of the group it holds (the group page draws only those).
+* ``GET /api/fit?family=F&group=G&file=S&codepoints=1,2,3`` — the fit of those code
+  points of one style file, for a group too large to fit whole (``/api/glyphs`` leaves
+  its ``fit`` empty): the page asks for the glyphs it draws, a page at a time.
 * ``GET /api/names?group=G`` — the official Unicode names of the group's code points
   (from ``NamesList.txt``; empty when the list is not available).
 * ``GET /api/composition?group=G`` — the group resolved through its inheritance
@@ -169,6 +172,17 @@ class _Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             status, payload = self._state.glyphs(
                 query.get("family", [""])[0], query.get("group", [""])[0])
+            self._send_json(payload, status=status)
+        elif path == "/api/fit":
+            query = parse_qs(parsed.query)
+            try:
+                points = [int(item) for item in query.get("codepoints", [""])[0].split(",") if item]
+            except ValueError:
+                self._send_json({"error": "codepoints must be integers"}, status=400)
+                return
+            status, payload = self._state.fit(
+                query.get("family", [""])[0], query.get("group", [""])[0],
+                query.get("file", [""])[0], points)
             self._send_json(payload, status=status)
         elif path == "/api/names":
             status, payload = self._state.glyph_names(

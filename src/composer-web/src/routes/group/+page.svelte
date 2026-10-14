@@ -4,6 +4,7 @@
 	import ConfirmModal from '#lib/modal/ConfirmModal.svelte';
 	import IconHelpCircleFilled from '@tabler/icons-svelte/icons/help-circle-filled';
 	import {
+		fetchFit,
 		fetchGlyphs,
 		postChoose,
 		type FitInfo,
@@ -47,8 +48,17 @@
 
 	const layoutMode = $derived(viewOptions.layoutMode(group?.total ?? 0));
 
+	// A group too large to fit whole is fitted a page at a time: `fitsOf` is what has been
+	// asked for so far, and what the page draws and counts. Showing more glyphs, or
+	// switching the preview, only ever adds to it.
+	function fitsOf(file: string): Record<string, FitInfo> {
+		return group && group.total > FULL_GRID_MAX
+			? (lazyFit[file] ?? {})
+			: (currentGlyphs?.fit[file] ?? {});
+	}
+
 	function clippedIn(file: string): number {
-		return clippedCount(Object.values(currentGlyphs?.fit[file] ?? {}));
+		return clippedCount(Object.values(fitsOf(file)));
 	}
 
 	const fontFaceCss = $derived(
@@ -98,6 +108,48 @@
 
 	let shownLimits = $state<Record<string, number>>({});
 
+	// A group too large to fit whole (nerd-icons) is fitted a page at a time. A page of glyphs
+	// is drawn only once its font is loaded and its fits are here: nothing is drawn before
+	// (no empty boxes, no glyphs that jump into place), and a style that has not been
+	// fitted yet shows only its heading, like every other group while it loads.
+	// `readyLimit` is how many of a style's glyphs are drawn, and only ever grows.
+	let lazyFit = $state<Record<string, Record<string, FitInfo>>>({});
+	let readyLimit = $state<Record<string, number>>({});
+	let askedLimit = new Map<string, number>();
+	let lazyKey = '';
+
+	$effect(() => {
+		if (!group || !family || currentGlyphs === null || group.total <= FULL_GRID_MAX) return;
+		const key = `${familyLabel}|${groupId}|${libraryVersion}`;
+		if (key !== lazyKey) {
+			lazyKey = key;
+			lazyFit = {};
+			readyLimit = {};
+			askedLimit = new Map();
+		}
+		family.styles.forEach((style, index) => {
+			const limit = shownLimits[style.file] ?? PAGE_SIZE;
+			const done = askedLimit.get(style.file) ?? 0;
+			if (limit <= done) return;
+			const held_ = held(style.file);
+			const wanted = held_.slice(done, limit);
+			askedLimit.set(style.file, limit);
+			if (wanted.length === 0) {
+				readyLimit[style.file] = limit;
+				return;
+			}
+			const face = `64px "fc-style-${index}"`;
+			Promise.all([
+				fetchFit(familyLabel, groupId, style.file, wanted).catch(() => null),
+				document.fonts.load(face, String.fromCodePoint(wanted[0])).catch(() => [])
+			]).then(([payload]) => {
+				if (key !== lazyKey) return;
+				if (payload) lazyFit[style.file] = { ...lazyFit[style.file], ...payload.fit };
+				readyLimit[style.file] = Math.max(readyLimit[style.file] ?? 0, limit);
+			});
+		});
+	});
+
 	interface Cell {
 		codepoint: number;
 		present: boolean;
@@ -110,7 +162,7 @@
 
 	function visibleCells(file: string, target: GroupInfo): Cell[] {
 		const heldPoints = held(file);
-		const fits = currentGlyphs?.fit[file] ?? {};
+		const fits = fitsOf(file);
 		if (target.total <= FULL_GRID_MAX) {
 			const have = new Set(heldPoints);
 			return groupCodepoints(target).map((codepoint) => ({
@@ -119,8 +171,9 @@
 				fit: fits[codepoint]
 			}));
 		}
+		const drawn = Math.min(shownLimits[file] ?? PAGE_SIZE, readyLimit[file] ?? 0);
 		return heldPoints
-			.slice(0, shownLimits[file] ?? PAGE_SIZE)
+			.slice(0, drawn)
 			.map((codepoint) => ({ codepoint, present: true, fit: fits[codepoint] }));
 	}
 
@@ -216,7 +269,7 @@
 	<StickyBar>
 		<span class="mr-6 flex">
 			<Toggle
-				label="Use this Font Family for this Group"
+				label="Use this Font Family for the {group.id} Group"
 				checked={position >= 0}
 				onchange={(enabled) => change(enabled ? 'add' : 'remove')}
 			/>
@@ -278,7 +331,7 @@
 				</p>
 			</div>
 			<div class="mt-2 mb-10">
-				{#if currentGlyphs === null}
+				{#if currentGlyphs === null || (group.total > FULL_GRID_MAX && readyLimit[style.file] === undefined)}
 					<p class="m-0 text-[14px] {colors.textSecondary}">{glyphsError ?? 'loading glyphs…'}</p>
 				{:else}
 					{@const cells = visibleCells(style.file, group)}
@@ -304,7 +357,7 @@
 						class="sticky left-0 mb-8"
 						onclick={() => showMore(style.file)}
 					>
-						show {Math.min(PAGE_SIZE, remaining)} more ({remaining} not shown)
+						Show {Math.min(PAGE_SIZE, remaining)} More ({remaining} Remaining)
 					</CtrlButton>
 				{/if}
 			{/if}

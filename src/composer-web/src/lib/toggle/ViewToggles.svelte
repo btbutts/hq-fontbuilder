@@ -14,13 +14,13 @@
 </script>
 
 <Toggle
-	label="Preview unfitted glyphs"
+	label="Preview Unfitted Glyphs"
 	title="show the glyphs as the donor font draws them, outlined red where the base cell cuts them off"
 	checked={viewOptions.unfitted}
 	onchange={(enabled) => (viewOptions.unfitted = enabled)}
 />
 <Toggle
-	label="Enable glyph wrapping"
+	label="Enable Glyph Wrapping"
 	title={alwaysWraps
 		? 'this group is always shown as a wrapping run'
 		: 'one wrapping run of cells instead of stacked rows'}
