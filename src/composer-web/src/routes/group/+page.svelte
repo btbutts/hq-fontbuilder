@@ -1,5 +1,8 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
+	import ConfirmModal from '#lib/modal/ConfirmModal.svelte';
+	import IconHelpCircleFilled from '@tabler/icons-svelte/icons/help-circle-filled';
 	import {
 		fetchGlyphs,
 		postChoose,
@@ -8,6 +11,7 @@
 		type GroupInfo
 	} from '#lib/data/api.js';
 	import { consoleStore } from '#lib/data/console.svelte.js';
+	import CtrlButton from '#lib/button/CtrlButton.svelte';
 	import { installFontFaces } from '#lib/glyph/families.js';
 	import { clippedCount } from '#lib/glyph/fitDisplay.js';
 	import GlyphGrid from '#lib/glyph/GlyphGrid.svelte';
@@ -20,6 +24,7 @@
 	import Toggle from '#lib/toggle/Toggle.svelte';
 	import ViewToggles from '#lib/toggle/ViewToggles.svelte';
 	import { viewOptions } from '#lib/toggle/viewOptions.svelte.js';
+	import { emphasis, tip } from '#lib/tooltip/tooltip.js';
 
 	const GLYPH_EM_PX = 64;
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';
@@ -132,6 +137,7 @@
 	}
 
 	let chooseError = $state<string | null>(null);
+	let confirmClear = $state(false);
 
 	async function change(action: 'add' | 'remove' | 'clear'): Promise<void> {
 		const result = await postChoose(groupId, action, action === 'clear' ? null : familyLabel);
@@ -139,19 +145,45 @@
 		await consoleStore.refresh();
 	}
 
-	const chooseStatus = $derived(
-		chooseError ??
-			(order.length === 0
-				? 'no family is chosen for this group yet'
-				: position >= 0
-					? `number ${position + 1} of ${order.length} in the inheritance order: ${order.join(', ')}`
-					: `not used here; choosing it makes it number ${order.length + 1} after ${order.join(', ')}`)
+	// The toolbar shows a short status, so that it never grows taller; the details are its tooltip.
+	const familyName = $derived(family?.displayName ?? familyLabel);
+	const orderNames = $derived(order.map((label) => consoleStore.nameOf(label)));
+
+	const statusText = $derived(
+		chooseError !== null
+			? 'Could not save'
+			: position >= 0
+				? `Inheritance Position: ${position + 1} of ${order.length}`
+				: 'Not Inherited'
 	);
+
+	const statusDetails = $derived.by(() => {
+		if (chooseError !== null) return chooseError;
+		if (position >= 0) {
+			const names = orderNames.map((name, index) =>
+				index === position ? emphasis(name) : name
+			);
+			return [
+				`${familyName} is at position ${position + 1} of ${order.length} in the ${groupId} Inheritance Order:`,
+				names.join(', ')
+			].join('\n');
+		}
+		const lines = [`${familyName} is not yet in the Inheritance Order for ${groupId}.`];
+		if (order.length === 0) {
+			lines.push('Selecting it will add it at position 1.');
+		} else {
+			lines.push(
+				`Selecting it will add it at position ${order.length + 1} after:`,
+				[...orderNames, emphasis(familyName)].join(', ')
+			);
+		}
+		return lines.join('\n');
+	});
 </script>
 
 <PageHeader>
 	<div class="flex items-center justify-between gap-4">
-		<a href="/" class="underline {colors.textAccent1}">← coverage table</a>
+		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>coverage table</CtrlButton>
 		<ThemeToggle />
 	</div>
 
@@ -163,11 +195,11 @@
 		</h1>
 	{:else}
 		<h1 class="mt-4 mb-1 text-[1.4rem] font-semibold">
-			{family.label} — {group.id}{group.atomic ? ' (atomic)' : ''}
+			{family.displayName} — {group.id}{group.atomic ? ' (atomic)' : ''}
 		</h1>
 		<p class="mt-0 mb-0 max-w-5xl {colors.textSecondary}">
 			{group.label}; {group.total} code points; cell of base family
-			{base ? base.family : '(none configured)'}. Coverage shown for the family is that of its
+			{base ? consoleStore.nameOf(base.family) : '(none configured)'}. Coverage shown for the family is that of its
 			reference style (the upright cut nearest Regular). Families are used in the order they are
 			chosen: a glyph comes from the first one that has it, the later ones fill in the rest.
 		</p>
@@ -182,30 +214,44 @@
 
 {#if snapshot !== null && group && family}
 	<StickyBar>
-		<span class="mr-6">
+		<span class="mr-6 flex">
 			<Toggle
-				label="use this family for this group"
+				label="Use this Font Family for this Group"
 				checked={position >= 0}
 				onchange={(enabled) => change(enabled ? 'add' : 'remove')}
 			/>
 		</span>
 		{#if order.length > 0}
-			<a
-				class="mr-6 underline {colors.textAccent1}"
-				href="/compose?{new URLSearchParams({ group: groupId })}"
-				title="the glyphs of this group as combined from the chosen families"
-				>combined result →</a
+			<CtrlButton
+				function="nav.FORWARD"
+				class="mr-6"
+				onclick={() => goto(`/compose?${new URLSearchParams({ group: groupId })}`)}
 			>
-			<button
-				type="button"
-				class="mr-6 cursor-pointer rounded border px-2 py-0.5 text-[0.9em] {colors.border} {colors.raisedControlBackground}"
-				onclick={() => change('clear')}
+				combined result
+			</CtrlButton>
+			<CtrlButton
+				surface="raised"
+				padding="px-2 py-0.5"
+				fontSize="text-[0.9em]"
+				class="mr-6"
+				tooltip="remove every font from the Inheritance Order of this glyph category (asks first)"
+				onclick={() => (confirmClear = true)}
 			>
-				clear all families
-			</button>
+				Clear All Families
+			</CtrlButton>
 		{/if}
-		<span class="text-[0.9em] {chooseError ? colors.textError : colors.textAccent1}">
-			{chooseStatus}
+		<span
+			class="inline-flex items-center gap-1 text-[0.9em] whitespace-nowrap {chooseError
+				? colors.textError
+				: colors.textAccent1}"
+			{...tip(undefined, statusDetails)}
+		>
+			{statusText}
+			<!-- the circle is 20 of the icon's 24 units: scaled so that it is as tall as the button beside it -->
+			<IconHelpCircleFilled
+				class="-my-[2.5px] size-[calc((1lh+6px)*1.2)] shrink-0"
+				aria-hidden="true"
+			/>
 		</span>
 		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
 			<ViewToggles groupTotal={group.total} />
@@ -253,16 +299,29 @@
 			{#if group.total > FULL_GRID_MAX}
 				{@const remaining = held(style.file).length - (shownLimits[style.file] ?? PAGE_SIZE)}
 				{#if remaining > 0}
-					<button
-						type="button"
-						class="sticky left-0 mb-8 cursor-pointer rounded border px-3 py-1 {colors.border} {colors.quietControlBackground}"
+					<CtrlButton
+						function="list.SHOW_MORE"
+						class="sticky left-0 mb-8"
 						onclick={() => showMore(style.file)}
 					>
 						show {Math.min(PAGE_SIZE, remaining)} more ({remaining} not shown)
-					</button>
+					</CtrlButton>
 				{/if}
 			{/if}
 		</section>
 	{/each}
 	</div>
+{/if}
+
+{#if confirmClear}
+	<ConfirmModal
+		title="Clear All Families"
+		message="This removes every font from the {groupId} Inheritance Order. Fonts can be added again afterwards from the coverage table."
+		confirmLabel="Confirm"
+		onconfirm={() => {
+			confirmClear = false;
+			void change('clear');
+		}}
+		oncancel={() => (confirmClear = false)}
+	/>
 {/if}

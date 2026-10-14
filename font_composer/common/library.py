@@ -58,6 +58,17 @@ class Family:
             return None
         return min(candidates, key=lambda style: abs(style.info.names.weight - REGULAR_WEIGHT))
 
+    @property
+    def display_name(self) -> str:
+        """The name to show for the family: the one its reference style's file carries.
+
+        This is the family name of the font's name table ("FiraMono Nerd Font"), not the
+        folder label ("FiraMonoNerdFont"), which stays the key in the configuration and in
+        URLs. A family without a readable style has only its label.
+        """
+        reference = self.regular_style()
+        return reference.info.names.family if reference is not None else self.label
+
     def coverage(self, group: GlyphGroup) -> tuple[int, int]:
         """Return the reference style's coverage of one group as ``(present, total)``."""
         reference = self.regular_style()

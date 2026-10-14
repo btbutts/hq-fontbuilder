@@ -98,10 +98,30 @@ export const colors = {
 	 *  Close, show more …). */
 	quietControlBackground: 'bg-[#f0f0f4] dark:bg-[#212223]',
 
-	/** The same controls, and clickable glyph cells, under the pointer. */
-	hoverBackground: 'hover:bg-[#eef3f7] dark:hover:bg-[#2a2c2e]',
+	/**
+	 * What a button does to its own background under the pointer, whatever that background is:
+	 * a flat veil of black in light mode (it darkens) and of white in dark mode (it lightens),
+	 * painted over the background colour and under the text and icon. A button therefore needs
+	 * one background colour only. The two `0.1` are the strength of the veil; change them
+	 * together. Not applied to a disabled button.
+	 */
+	controlHoverTint:
+		'enabled:hover:bg-[linear-gradient(rgb(0_0_0/0.1),rgb(0_0_0/0.1))] dark:enabled:hover:bg-[linear-gradient(rgb(255_255_255/0.1),rgb(255_255_255/0.1))]',
 
-	/** Buttons and drop-downs that sit on the dark band / toolbar (the ▲ ▼ ✕ buttons, "add a
+	/**
+	 * The close button of a dialog. At rest it is the quiet grey in light mode and the darkest
+	 * background of the theme in dark mode; under the pointer it turns red, the red of
+	 * `buttonAccent` (kept as its own entry so that either can change alone). The two hover
+	 * colours replace `controlHoverTint`, which a surface with its own hover leaves out. In light
+	 * mode the icon turns white on the red; dark mode keeps its icon colour (`textPrimary`).
+	 */
+	closeButton: {
+		rest: 'bg-[#f0f0f4] dark:bg-[#121314]',
+		hover:
+			'enabled:hover:bg-[#b02e2e] enabled:hover:text-white dark:enabled:hover:bg-[#d63838] dark:enabled:hover:text-[#cccccc]'
+	},
+
+	/** Buttons and drop-downs that sit on the dark band / toolbar (the reorder buttons, "add a
 	 *  family", "clear all families"); lighter than the band so they stand out from it. */
 	raisedControlBackground: 'bg-[#ffffff] dark:bg-[#191a1b]',
 
@@ -142,7 +162,7 @@ export const colors = {
 	 *  `buttonAccent`. */
 	textAccent2: 'text-[#b02e2e] dark:text-[#d63838]',
 
-	/** Error messages, unsourced groups, problem fonts, the ✕ (leave out) button. */
+	/** Error messages, unsourced groups, problem fonts, the "leave out of this group" button. */
 	textError: 'text-[#b02e2e] dark:text-[#d63838]',
 
 	/** Cautions: "the styles of this family hold different glyphs of this group". */

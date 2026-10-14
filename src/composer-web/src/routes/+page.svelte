@@ -1,4 +1,5 @@
 <script lang="ts">
+	import CtrlButton from '#lib/button/CtrlButton.svelte';
 	import { consoleStore } from '#lib/data/console.svelte.js';
 	import StyleMappingModal from '#lib/modal/StyleMappingModal.svelte';
 	import { colors } from '#lib/styles.svelte.js';
@@ -45,13 +46,13 @@
 	</div>
 	<div class="flex shrink-0 flex-col items-end gap-3">
 		<ThemeToggle />
-		<button
-			type="button"
-			class="cursor-pointer rounded border px-3 py-1.5 font-medium {colors.border} {colors.quietControlBackground} {colors.textPrimary} {colors.hoverBackground}"
+		<CtrlButton
+			padding="px-3 py-1.5"
+			fontWeight="font-medium"
 			onclick={() => (showStyleMapping = true)}
 		>
 			Style Mapping
-		</button>
+		</CtrlButton>
 	</div>
 </div>
 
@@ -71,7 +72,7 @@
 				<th class="border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">group</th>
 				{#each snapshot.families as family (family.label)}
 					<th class="border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
-						{family.label}{family.errors.length ? ' ⚠' : ''}
+						{family.displayName}{family.errors.length ? ' ⚠' : ''}
 					</th>
 				{/each}
 			</tr>
@@ -91,7 +92,7 @@
 								href={groupHref(family.label, group.id)}
 								class="relative block px-2 py-1 no-underline transition-[box-shadow,background-color,transform] duration-150 ease-out hover:z-10 hover:scale-[1.03] focus-visible:z-10 focus-visible:scale-[1.03] motion-reduce:transition-none motion-reduce:hover:scale-100 {cellClasses(present, total, position >= 0)} {position >= 0 ? 'font-semibold' : ''}"
 								{...tip(
-									`${family.label} — ${group.label}`,
+									`${family.displayName} — ${group.label}`,
 									[
 										`${present} of ${total} code points`,
 										position >= 0 ? `number ${position + 1} in the inheritance order` : null,
@@ -132,8 +133,10 @@
 				<tr>
 					<td class="border px-3 py-1 font-mono whitespace-nowrap {colors.border}">
 						{#if entry.order.length}
-							<a href={composeHref(entry.group)} class="underline {colors.textAccent1}"
-								title="show the combined glyphs of {entry.group}">{entry.group}</a
+							<a
+								href={composeHref(entry.group)}
+								class="underline {colors.textAccent1}"
+								{...tip(undefined, `show the combined glyphs of ${entry.group}`)}>{entry.group}</a
 							>
 						{:else}
 							{entry.group}
@@ -141,14 +144,14 @@
 					</td>
 					<td class="border px-3 py-1 {colors.border}">
 						{#if entry.order.length}
-							{entry.order.join(', ')}
+							{entry.order.map((label) => consoleStore.nameOf(label)).join(', ')}
 							<span class="ml-2 text-[0.85em] {colors.textTertiary}"
 								>{entry.covered}/{entry.total} code points</span
 							>
 						{:else}
 							<span class={colors.textError}>
 								{entry.candidates.length
-									? `unsourced — full coverage: ${entry.candidates.join(', ')}`
+									? `unsourced — full coverage: ${entry.candidates.map((label) => consoleStore.nameOf(label)).join(', ')}`
 									: 'unsourced — no family covers this group fully'}
 							</span>
 						{/if}

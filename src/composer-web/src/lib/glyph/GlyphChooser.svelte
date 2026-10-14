@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import CtrlButton from '../button/CtrlButton.svelte';
 	import GlyphCell from './GlyphCell.svelte';
 	import { chooserGrid, type CellGeometry } from './glyphLayout';
 	import { colors } from '../styles.svelte';
@@ -123,13 +124,14 @@
 		style:grid-template-columns="repeat({grid.columns}, {TILE_WIDTH}px)"
 	>
 		{#each candidates as candidate (candidate.family)}
-			<button
-				type="button"
-				class="flex cursor-pointer flex-col items-center rounded border px-1.5 py-1.5 text-center {colors.popoverBackground} {colors.hoverBackground} {candidate.family ===
-				current
+			<CtrlButton
+				surface="popover"
+				padding="px-1.5 py-1.5"
+				border={candidate.family === current
 					? `border-2 ${colors.glyphChoiceCurrentBorder}`
-					: colors.border}"
-				title={candidate.family === current ? `${candidate.label} draws it now` : candidate.label}
+					: `border ${colors.border}`}
+				class="flex flex-col items-center text-center"
+				tooltip={candidate.family === current ? `${candidate.label} draws it now` : candidate.label}
 				onclick={() => onchoose(candidate.family)}
 			>
 				<GlyphCell
@@ -138,22 +140,19 @@
 					fontFamily={candidate.cssName}
 					{geometry}
 					accent={candidate.color}
+					tooltip={false}
 				/>
 				<span class="mt-1 block text-[0.8em] leading-tight">
 					{candidate.label}{candidate.family === current ? ' ✓' : ''}
 				</span>
-			</button>
+			</CtrlButton>
 		{/each}
 	</div>
 	{#if pinned}
 		<div class="mt-3 flex justify-center">
-			<button
-				type="button"
-				class="cursor-pointer rounded border px-2 py-1 text-[0.85em] {colors.border} {colors.quietControlBackground}"
-				onclick={() => onchoose(null)}
-			>
+			<CtrlButton padding="px-2 py-1" fontSize="text-[0.85em]" onclick={() => onchoose(null)}>
 				use the inheritance order again
-			</button>
+			</CtrlButton>
 		</div>
 	{/if}
 </div>

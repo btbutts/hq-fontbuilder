@@ -1,6 +1,8 @@
 <script lang="ts">
+	import CtrlButton from '../button/CtrlButton.svelte';
 	import { postStyle, type StyleFileInfo } from '../data/api';
 	import { consoleStore } from '../data/console.svelte';
+	import Dropdown from '../dropdown/Dropdown.svelte';
 	import { colors } from '../styles.svelte';
 
 	interface Props {
@@ -52,11 +54,7 @@
 >
 	<div class="flex items-start justify-between gap-4 border-b px-5 py-3 {colors.border}">
 		<h2 id="style-mapping-title" class="m-0 text-[1.2rem] font-semibold">Style mapping</h2>
-		<button
-			type="button"
-			class="cursor-pointer rounded border px-2.5 py-0.5 {colors.border} {colors.quietControlBackground} {colors.textPrimary}"
-			onclick={onclose}>Close</button
-		>
+		<CtrlButton function="modal.CLOSE" onclick={onclose} />
 	</div>
 
 	<div class="overflow-auto px-5 py-4">
@@ -118,21 +116,23 @@
 					{#each families as family (family)}
 						<tr>
 							<td class="border px-3 py-1 align-top font-semibold {colors.border}">
-								{family}
+								{consoleStore.nameOf(family)}
 							</td>
 							{#each map.outputStyles as style (style)}
 								{@const entry = map.entries[style]?.[family]}
 								<td class="border px-3 py-1 align-top {colors.border}">
-									<select
-										class="w-(--select-width) rounded border px-1 py-0.5 {colors.border} {colors.inputBackground} {colors.textPrimary}"
-										value={entry?.overridden ? entry.file : ''}
-										onchange={(event) => choose(style, family, event.currentTarget.value)}
-									>
-										<option value="">{automaticLabel(family, style)}</option>
-										{#each map.families[family] ?? [] as file (file.file)}
-											<option value={file.file}>{describe(file)}</option>
-										{/each}
-									</select>
+									<Dropdown
+										class="w-(--select-width)"
+										value={entry?.overridden ? (entry.file ?? '') : ''}
+										options={[
+											{ value: '', label: automaticLabel(family, style) },
+											...(map.families[family] ?? []).map((file) => ({
+												value: file.file,
+												label: describe(file)
+											}))
+										]}
+										onchange={(file) => choose(style, family, file)}
+									/>
 									<div
 										class="mt-0.5 w-(--select-width) text-[0.8em] {entry?.file
 											? colors.textTertiary

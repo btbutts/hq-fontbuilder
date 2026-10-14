@@ -111,6 +111,19 @@ def test_unknown_ids_are_rejected(tmp_path: Path) -> None:
     assert state.choose("arrows", "Alpha", "explode")[0] == HTTPStatus.BAD_REQUEST
 
 
+def test_a_family_is_shown_by_the_name_its_font_carries(tmp_path: Path) -> None:
+    """Serve the name table's family name as ``displayName``; the folder label stays the key."""
+    state = _make_state(tmp_path)
+    fonts = tmp_path / "fonts"
+    (fonts / "SpacedOut").mkdir()
+    build_font(fonts / "SpacedOut" / "SpacedOut-Regular.ttf", codepoints=[ord("M")],
+               spec=FontSpec(names=NameSpec(family="Spaced Out Mono")))
+    state.refresh()
+    families = {item["label"]: item["displayName"] for item in state.snapshot()["families"]}
+    assert families["SpacedOut"] == "Spaced Out Mono"
+    assert families["Alpha"] == "Test Family"  # a fixture font that names itself nothing special
+
+
 def test_the_composition_fills_gaps_in_order_and_counts_sources(tmp_path: Path) -> None:
     """Take each glyph from the first family that has it; the rest fill in."""
     state = _make_state(tmp_path)

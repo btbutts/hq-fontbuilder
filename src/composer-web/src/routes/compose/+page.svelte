@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
 		fetchComposition,
@@ -8,7 +9,9 @@
 		type Composition,
 		type ResolvedGlyph
 	} from '#lib/data/api.js';
+	import CtrlButton from '#lib/button/CtrlButton.svelte';
 	import { consoleStore } from '#lib/data/console.svelte.js';
+	import Dropdown from '#lib/dropdown/Dropdown.svelte';
 	import { familyColor, familyCssName, fontFaceRules, installFontFaces } from '#lib/glyph/families.js';
 	import GlyphChooser, { type Candidate } from '#lib/glyph/GlyphChooser.svelte';
 	import { clippedCount } from '#lib/glyph/fitDisplay.js';
@@ -156,7 +159,7 @@
 
 <PageHeader>
 	<div class="flex items-center justify-between gap-4">
-		<a href="/" class="underline {colors.textAccent1}">← coverage table</a>
+		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>coverage table</CtrlButton>
 		<ThemeToggle />
 	</div>
 
@@ -200,51 +203,45 @@
 						aria-hidden="true"
 					></span>
 					<span class="text-right {colors.textTertiary}">{index + 1}.</span>
-					<span class="font-medium">{family}</span>
+					<span class="font-medium">{consoleStore.nameOf(family)}</span>
 					<span class="pl-4 text-[0.85em] whitespace-nowrap {colors.textTertiary}">
 						{current.contributions[family] ?? 0} glyph{current.contributions[family] === 1
 							? ''
 							: 's'} used
 					</span>
-					<button
-						type="button"
-						class="ml-4 w-7 cursor-pointer justify-self-center rounded border px-0 disabled:opacity-30 {colors.border} {colors.raisedControlBackground}"
-						title="earlier in the order"
+					<CtrlButton
+						function="reorder.UP"
 						disabled={index === 0}
-						onclick={() => change('up', family)}>▲</button
-					>
-					<button
-						type="button"
-						class="w-7 cursor-pointer justify-self-center rounded border px-0 disabled:opacity-30 {colors.border} {colors.raisedControlBackground}"
-						title="later in the order"
+						onclick={() => change('up', family)}
+					/>
+					<CtrlButton
+						function="reorder.DOWN"
 						disabled={index === current.order.length - 1}
-						onclick={() => change('down', family)}>▼</button
-					>
-					<button
-						type="button"
-						class="w-7 cursor-pointer justify-self-center rounded border px-0 {colors.border} {colors.raisedControlBackground} {colors.textError}"
-						title="leave out of this group"
-						onclick={() => change('remove', family)}>✕</button
-					>
+						onclick={() => change('down', family)}
+					/>
+					<CtrlButton function="reorder.REMOVE" onclick={() => change('remove', family)} />
 				</li>
 			{/each}
 		</ol>
 		{#if unusedFamilies.length > 0 && !(group.atomic && current.order.length > 0)}
 			<label class="mt-2 inline-block text-[0.9em]">
 				add a family at the end:
-				<select
-					class="ml-1 rounded border px-1 py-0.5 {colors.border} {colors.raisedControlBackground}"
-					onchange={(event) => {
-						const family = event.currentTarget.value;
-						event.currentTarget.value = '';
+				<Dropdown
+					class="ml-1"
+					surface="raised"
+					momentary
+					value=""
+					options={[
+						{ value: '', label: 'choose…' },
+						...unusedFamilies.map((family) => ({
+							value: family,
+							label: consoleStore.nameOf(family)
+						}))
+					]}
+					onchange={(family) => {
 						if (family) void change('add', family);
 					}}
-				>
-					<option value="">choose…</option>
-					{#each unusedFamilies as family (family)}
-						<option value={family}>{family}</option>
-					{/each}
-				</select>
+				/>
 			</label>
 		{/if}
 		{#if actionError}
@@ -257,7 +254,7 @@
 				Some pinned glyphs in the configuration cannot be honoured and are ignored:
 				<ul class="m-0 pl-5">
 					{#each current.invalidOverrides as item (item.codepoint)}
-						<li><span class="font-mono">{hex(item.codepoint)}</span> → {item.family}: {item.reason}</li>
+						<li><span class="font-mono">{hex(item.codepoint)}</span> → {consoleStore.nameOf(item.family)}: {item.reason}</li>
 					{/each}
 				</ul>
 			</div>
@@ -295,14 +292,10 @@
 				onpick={group.atomic ? undefined : openChooser}
 			/>
 			{#if large && current.glyphs.length > shown}
-				<button
-					type="button"
-					class="mt-4 cursor-pointer rounded border px-3 py-1 {colors.border} {colors.quietControlBackground}"
-					onclick={() => (shown += PAGE_SIZE)}
-				>
+				<CtrlButton function="list.SHOW_MORE" class="mt-4" onclick={() => (shown += PAGE_SIZE)}>
 					show {Math.min(PAGE_SIZE, current.glyphs.length - shown)} more ({current.glyphs.length -
 						shown} not shown)
-				</button>
+				</CtrlButton>
 			{/if}
 		{/if}
 	</div>

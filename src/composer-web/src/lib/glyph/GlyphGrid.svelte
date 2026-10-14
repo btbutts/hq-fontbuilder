@@ -1,4 +1,5 @@
 <script lang="ts">
+	import CtrlButton from '../button/CtrlButton.svelte';
 	import GlyphCell from './GlyphCell.svelte';
 	import {
 		layoutCells,
@@ -30,9 +31,10 @@
 
 {#snippet cellView(cell: LayoutCell)}
 	{#if onpick && (cell.alternatives ?? 0) > 1}
-		<button
-			type="button"
-			class="shrink-0 cursor-pointer rounded border-0 bg-transparent p-0 focus-visible:outline-2 {colors.hoverBackground} {colors.focusOutline}"
+		<CtrlButton
+			surface="bare"
+			padding="p-0"
+			class="shrink-0 focus-visible:outline-2 {colors.focusOutline}"
 			onclick={(event) => onpick(cell, event.currentTarget)}
 		>
 			<GlyphCell
@@ -47,7 +49,7 @@
 				hint="{cell.alternatives} families have this glyph: click to choose"
 				choosable
 			/>
-		</button>
+		</CtrlButton>
 	{:else}
 		<GlyphCell
 			codepoint={cell.codepoint}

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { colors } from '../styles.svelte';
-	import { TIP_BODY_ATTRIBUTE, TIP_TITLE_ATTRIBUTE } from './tooltip';
+	import { TIP_BODY_ATTRIBUTE, TIP_TITLE_ATTRIBUTE, tipRuns } from './tooltip';
 
 	// The one tooltip of the page. Elements describe themselves with `tip()`; this finds
 	// the nearest described element under the pointer (or the focused one) and shows it.
@@ -68,17 +68,23 @@
 		show(element, rect.left, rect.bottom);
 	}
 
+	// A focused element that is removed (a button that navigates away) fires focusout while
+	// Svelte is tearing it down, when state may not be set: hide a moment later.
+	function onFocusOut(): void {
+		queueMicrotask(hide);
+	}
+
 	onMount(() => {
 		document.addEventListener('pointermove', onMove);
 		document.addEventListener('pointerdown', hide);
 		document.addEventListener('focusin', onFocus);
-		document.addEventListener('focusout', hide);
+		document.addEventListener('focusout', onFocusOut);
 		document.addEventListener('scroll', hide, true);
 		return () => {
 			document.removeEventListener('pointermove', onMove);
 			document.removeEventListener('pointerdown', hide);
 			document.removeEventListener('focusin', onFocus);
-			document.removeEventListener('focusout', hide);
+			document.removeEventListener('focusout', onFocusOut);
 			document.removeEventListener('scroll', hide, true);
 			clearTimeout(timer);
 		};
@@ -97,7 +103,11 @@
 			<div class="font-semibold">{title}</div>
 		{/if}
 		{#each lines as line, index (index)}
-			<div class={colors.textSecondary}>{line}</div>
+			<div class={colors.textSecondary}>
+				{#each tipRuns(line) as run, position (position)}
+					{#if run.italic}<em>{run.text}</em>{:else}{run.text}{/if}
+				{/each}
+			</div>
 		{/each}
 	</div>
 {/if}

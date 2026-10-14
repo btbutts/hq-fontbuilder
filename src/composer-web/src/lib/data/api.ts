@@ -28,7 +28,10 @@ export interface FamilyError {
 }
 
 export interface FamilyInfo {
+	/** the family's folder name: the key in the configuration and in URLs */
 	label: string;
+	/** the family name the font file carries ("FiraMono Nerd Font"): what to show */
+	displayName: string;
 	styles: StyleInfo[];
 	errors: FamilyError[];
 }

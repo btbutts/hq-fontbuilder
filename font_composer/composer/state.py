@@ -122,6 +122,7 @@ def _family_payload(family: Family) -> dict[str, Any]:
     """Serialize one family for ``/api/state``."""
     return {
         "label": family.label,
+        "displayName": family.display_name,
         "styles": [_style_payload(family, index) for index in range(len(family.styles))],
         "errors": [{"file": error.path.name, "reason": error.reason}
                    for error in family.errors],
@@ -553,9 +554,9 @@ def _composition_payload(
     for label in order:
         family = library.family(label)
         reference = family.regular_style() if family is not None else None
-        if reference is not None:
+        if family is not None and reference is not None:
             fonts[label] = reference.file_name
-            family_names[label] = reference.info.names.family
+            family_names[label] = family.display_name
     glyphs = []
     for glyph in composition.glyphs:
         entry: dict[str, Any] = {"codepoint": glyph.codepoint, "source": glyph.source}

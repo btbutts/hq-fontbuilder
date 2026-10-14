@@ -27,6 +27,8 @@
 		showFitted?: boolean;
 		/** an extra line for the tooltip (e.g. that the cell can be clicked) */
 		hint?: string;
+		/** false when the element around the cell has a tooltip of its own, which would be hidden by the cell's */
+		tooltip?: boolean;
 	}
 
 	let {
@@ -39,7 +41,8 @@
 		choosable,
 		fit,
 		showFitted = false,
-		hint
+		hint,
+		tooltip = true
 	}: Props = $props();
 
 	const width = $derived(Math.round(geometry.cellW * geometry.emPx));
@@ -85,7 +88,7 @@
 <div
 	class="flex shrink-0 flex-col items-center"
 	style:width="{slot}px"
-	{...tip(name ?? code, tipLines)}
+	{...tooltip ? tip(name ?? code, tipLines) : {}}
 >
 	<svg
 		{width}
