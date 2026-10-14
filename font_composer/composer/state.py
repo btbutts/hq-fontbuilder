@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import threading
 import unicodedata
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -33,11 +34,28 @@ from font_composer.common.fit import (
 from font_composer.common.groups import GROUPS, GROUPS_BY_ID, GlyphGroup
 from font_composer.common.ink import read_ink
 from font_composer.common.library import Family, FontLibrary, StyleEntry
+from font_composer.common.names import UnicodeNames
 from font_composer.common.styles import find_style, parse_style_name, resolve_style
 
 CHOICE_ACTIONS = ("add", "remove", "up", "down", "clear")
 
 _FIT_ALL_STYLES_MAX = 512
+
+
+@lru_cache(maxsize=512)
+def _group_ink(
+    path: str, size: int, mtime_ns: int, group_id: str,
+) -> tuple[dict[int, Box], Box | None]:
+    """Read one font file's ink for one group.
+
+    Reading outlines is the slow part of judging fit and a font file rarely changes, so
+    results are kept by ``(file, size, mtime, group)``.
+    """
+    del size, mtime_ns  # part of the cache key only
+    try:
+        return read_ink(Path(path), GROUPS_BY_ID[group_id].codepoint_set)
+    except (OSError, ValueError, KeyError):
+        return {}, None
 
 
 def _cell_of(style: StyleEntry) -> CellSpec:
@@ -55,6 +73,7 @@ def _fit_payload(plan: FitPlan) -> dict[str, Any]:
         "dx": round(plan.dx, 5), "dy": round(plan.dy, 5),
         "overflow": round(plan.overflow, 4), "residual": round(plan.residual, 4),
         "clipped": plan.overflow > EPS and plan.kind != "bleed",
+        "clip": plan.clip,
     }
 
 
@@ -112,17 +131,17 @@ def _family_payload(family: Family) -> dict[str, Any]:
 class ConsoleState:
     """Lock-guarded shared state: the library scan, the config, the version counter."""
 
-    def __init__(self, fonts_dir: Path, config: Config) -> None:
+    def __init__(
+        self, fonts_dir: Path, config: Config, names: UnicodeNames | None = None,
+    ) -> None:
         """Scan the fonts directory once; :meth:`refresh` rescans on changes."""
         self.fonts_dir = fonts_dir
         self.config = config
+        self.names = names if names is not None else UnicodeNames()
         self.version = 0
         self.library = FontLibrary.scan(fonts_dir)
         self.config_error: str | None = None
         self._lock = threading.Lock()
-        # (file, size, mtime, group) -> (ink boxes, full-block frame): reading outlines
-        # is the slow part of judging fit, and a font file rarely changes
-        self._ink: dict[tuple[str, int, int, str], tuple[dict[int, Box], Box | None]] = {}
 
     def refresh(self) -> None:
         """Rescan the fonts directory and bump the version (the watcher callback).
@@ -302,8 +321,9 @@ class ConsoleState:
         reference = family.regular_style() if family is not None else None
         return _cell_of(reference) if reference is not None else None
 
+    @staticmethod
     def _ink_of(
-        self, style: StyleEntry, group: GlyphGroup,
+        style: StyleEntry, group: GlyphGroup,
     ) -> tuple[dict[int, Box], Box | None]:
         """Return the ink boxes of a style file's glyphs of one group (cached)."""
         path = style.info.path
@@ -311,16 +331,7 @@ class ConsoleState:
             stat = path.stat()
         except OSError:
             return {}, None
-        key = (str(path), stat.st_size, stat.st_mtime_ns, group.id)
-        cached = self._ink.get(key)
-        if cached is None:
-            wanted = group.codepoint_set & style.info.codepoints
-            try:
-                cached = read_ink(path, wanted)
-            except (OSError, ValueError, KeyError):
-                cached = ({}, None)
-            self._ink[key] = cached
-        return cached
+        return _group_ink(str(path), stat.st_size, stat.st_mtime_ns, group.id)
 
     def _class_fit(self, family: Family, name: str, base: CellSpec) -> ClassFit | None:
         """Find the shared scale of a family's glyphs in one category class.
@@ -337,6 +348,11 @@ class ConsoleState:
         for group_id in class_groups(name):
             boxes, frame = self._ink_of(reference, GROUPS_BY_ID[group_id])
             inks.extend(boxes.values())
+        if name == "connectors" and frame is not None:
+            # Box lines may run past the full block on purpose, so that neighbours
+            # overlap (Fira Code's by 0.2 em); the renderer cuts them at the cell. The
+            # family is fitted by its frame, never by the overshoot of its lines.
+            inks = [frame]
         return class_fit(name, inks, _cell_of(reference), frame, base)
 
     def fit_plans(
@@ -364,6 +380,14 @@ class ConsoleState:
             if plan.kind != "fits":
                 plans[codepoint] = plan
         return plans
+
+    def glyph_names(self, group_id: str) -> tuple[int, dict[str, Any]]:
+        """Return the official names of the code points of a group that have one."""
+        group = GROUPS_BY_ID.get(group_id)
+        if group is None:
+            return 400, {"error": f"unknown group: {group_id!r}"}
+        names = self.names.for_codepoints(group.codepoints)
+        return 200, {"group": group.id, "names": {str(cp): name for cp, name in names.items()}}
 
     def composition(self, group_id: str) -> tuple[int, dict[str, Any]]:
         """Resolve a group through its inheritance order and the glyph overrides."""
@@ -525,11 +549,13 @@ def _composition_payload(
 ) -> dict[str, Any]:
     """Serialize a resolved group for ``/api/composition``."""
     fonts: dict[str, str] = {}
+    family_names: dict[str, str] = {}
     for label in order:
         family = library.family(label)
         reference = family.regular_style() if family is not None else None
         if reference is not None:
             fonts[label] = reference.file_name
+            family_names[label] = reference.info.names.family
     glyphs = []
     for glyph in composition.glyphs:
         entry: dict[str, Any] = {"codepoint": glyph.codepoint, "source": glyph.source}
@@ -546,6 +572,7 @@ def _composition_payload(
         "total": group.total,
         "order": order,
         "fonts": fonts,
+        "familyNames": family_names,
         "glyphs": glyphs,
         "missing": composition.missing,
         "contributions": composition.contributions(order),
@@ -575,8 +602,9 @@ def _style_map(
         if family is None:
             continue
         families[label] = [
-            {"file": style.file_name, "style": style.info.names.style,
-             "weight": style.info.names.weight, "italic": style.info.names.italic}
+            {"file": style.file_name, "family": style.info.names.family,
+             "style": style.info.names.style, "weight": style.info.names.weight,
+             "italic": style.info.names.italic}
             for style in family.styles
         ]
         for style_name in output_styles:

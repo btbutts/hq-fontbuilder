@@ -13,7 +13,7 @@
  * Pure functions, no DOM: `glyphLayout.test.ts` exercises them with `node --test`.
  */
 
-import type { FitInfo } from './api';
+import type { FitInfo } from '../data/api';
 
 /**
  * A group up to this size is drawn whole, absent code points as hatched cells. A larger
@@ -134,4 +134,18 @@ export function layoutCells(groupId: string, cells: LayoutCell[], mode: LayoutMo
 	if (mode === 'wrap') return [{ label: null, cells }];
 	const named = NAMED_ROWS[groupId];
 	return named ? namedRows(named, cells) : hexRows(cells);
+}
+
+/** Most tiles in one row of the pop-up that chooses the family of a glyph. */
+export const CHOOSER_MAX_COLUMNS = 5;
+
+/**
+ * Shape of the tile grid for `count` candidates: one row up to three, then as square as
+ * it goes (4 -> 2x2, 5 -> 3+2, 6 -> 3+3 ...), never more than five to a row, so a third
+ * row only starts at eleven.
+ */
+export function chooserGrid(count: number): { columns: number; rows: number } {
+	if (count <= 3) return { columns: Math.max(1, count), rows: 1 };
+	const rows = Math.max(2, Math.ceil(count / CHOOSER_MAX_COLUMNS));
+	return { columns: Math.ceil(count / rows), rows };
 }

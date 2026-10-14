@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { FULL_GRID_MAX } from './glyphLayout';
+	import { FULL_GRID_MAX } from '../glyph/glyphLayout';
 	import Toggle from './Toggle.svelte';
 	import { viewOptions } from './viewOptions.svelte';
 

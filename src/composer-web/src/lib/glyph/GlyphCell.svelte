@@ -1,6 +1,10 @@
 <script lang="ts">
-	import type { FitInfo } from './api';
+	import type { FitInfo } from '../data/api';
+	import { describeFit } from './fitDisplay';
 	import { slotWidth, type CellGeometry } from './glyphLayout';
+	import { colors } from '../styles.svelte';
+	import { tip } from '../tooltip/tooltip';
+	import { unicodeNames } from '../data/unicodeNames.svelte';
 
 	interface Props {
 		codepoint: number;
@@ -8,7 +12,10 @@
 		/** false when the font has no glyph for the code point: nothing is drawn */
 		present: boolean;
 		geometry: CellGeometry;
-		/** colour of the family the glyph is taken from; drawn as a bar under the cell */
+		/**
+		 * colour of the family the glyph is taken from (an entry of `colors.family`: a text
+		 * colour class); drawn as a bar under the cell and as the edge of the markers
+		 */
 		accent?: string;
 		/** pinned by the user over the inheritance order (filled dot) */
 		pinned?: boolean;
@@ -18,6 +25,8 @@
 		fit?: FitInfo;
 		/** draw the glyph as it will be fitted (the correction applied) */
 		showFitted?: boolean;
+		/** an extra line for the tooltip (e.g. that the cell can be clicked) */
+		hint?: string;
 	}
 
 	let {
@@ -29,25 +38,35 @@
 		pinned,
 		choosable,
 		fit,
-		showFitted = false
+		showFitted = false,
+		hint
 	}: Props = $props();
 
 	const width = $derived(Math.round(geometry.cellW * geometry.emPx));
 	const height = $derived(Math.round(geometry.cellH * geometry.emPx));
 	const baseline = $derived(geometry.ascent * geometry.emPx);
 	const slot = $derived(slotWidth(geometry));
-	const clipped = $derived(fit?.clipped === true);
+	// red only for the original outline of a glyph the cell cuts off
+	const cutOff = $derived(fit?.clipped === true && !showFitted);
+	// a connector's deliberate overshoot is cut at the cell edge in the fitted view
+	const cutAtCell = $derived(showFitted && fit?.clip === true);
 	// x' = sx*x + dx, y' = sy*y + dy (em, y up) as an SVG matrix about the text origin
 	const matrix = $derived(
 		showFitted && fit
 			? `matrix(${fit.sx} 0 0 ${fit.sy} ${fit.dx * geometry.emPx} ${(1 - fit.sy) * baseline - fit.dy * geometry.emPx})`
 			: undefined
 	);
-	const note = $derived(
-		fit
-			? `${fit.clipped ? 'cut off by the cell' : 'adjusted'}: ${fit.kind}, ` +
-					`${fit.overflow.toFixed(2)} em outside; fit x${fit.sx.toFixed(2)} y${fit.sy.toFixed(2)}`
-			: ''
+	const code = $derived(`U+${codepoint.toString(16).toUpperCase().padStart(4, '0')}`);
+	const name = $derived(unicodeNames.nameOf(codepoint));
+	const tipLines = $derived(
+		[
+			name ? code : null,
+			present ? null : 'no glyph in this font',
+			present ? describeFit(fit, showFitted) : null,
+			hint ?? null
+		]
+			.filter((line): line is string => line !== null)
+			.join('\n')
 	);
 </script>
 
@@ -66,15 +85,15 @@
 <div
 	class="flex shrink-0 flex-col items-center"
 	style:width="{slot}px"
-	title={present ? (fit ? note : undefined) : 'no glyph in this font'}
+	{...tip(name ?? code, tipLines)}
 >
 	<svg
 		{width}
 		{height}
 		viewBox="0 0 {width} {height}"
-		class="block overflow-visible {present
-			? 'bg-white'
-			: 'bg-[repeating-linear-gradient(135deg,#f3f3f6_0_4px,#e2e2e8_4px_5px)]'}"
+		class="block {cutAtCell ? 'overflow-hidden' : 'overflow-visible'} {present
+			? colors.glyphBoxBackground
+			: colors.glyphBoxMissing}"
 		role="img"
 		aria-label="U+{codepoint.toString(16).toUpperCase().padStart(4, '0')}"
 	>
@@ -84,7 +103,7 @@
 				y={baseline}
 				font-family={fontFamily}
 				font-size={geometry.emPx}
-				fill="#1c1c1e"
+				class={colors.glyphInk}
 				transform={matrix}
 				style="font-variant-ligatures: none; font-kerning: none"
 				>{String.fromCodePoint(codepoint)}</text
@@ -95,7 +114,7 @@
 			x2={width + 3}
 			y1={baseline}
 			y2={baseline}
-			stroke="#d24a4a"
+			class={colors.glyphBaselineAccent}
 			stroke-width="1"
 			stroke-dasharray="3 2"
 		/>
@@ -105,28 +124,26 @@
 			width={width - 1}
 			height={height - 1}
 			fill="none"
-			stroke={clipped && !showFitted ? '#c62828' : '#b9b9bd'}
-			stroke-width={clipped && !showFitted ? 2 : 1}
+			class={cutOff ? colors.glyphBoxClippedOutline : colors.glyphBoxOutline}
+			stroke-width={cutOff ? 2 : 1}
 		/>
 		{#if pinned}
-			<circle cx={width - 6} cy="6" r="3.5" fill={accent ?? '#1b4965'} />
+			<circle cx={width - 6} cy="6" r="3.5" class="fill-current {accent ?? colors.textAccent1}" />
 		{:else if choosable}
 			<circle
 				cx={width - 6}
 				cy="6"
 				r="3"
-				fill="white"
-				stroke={accent ?? '#1b4965'}
+				class="stroke-current {accent ?? colors.textAccent1} {colors.glyphMarkerRingFill}"
 				stroke-width="1.5"
 			/>
 		{/if}
 	</svg>
 	<span
-		class="mt-0.5 h-0.75 rounded-sm"
+		class="mt-0.5 h-0.75 rounded-sm {accent ? `bg-current ${accent}` : ''}"
 		style:width="{width}px"
-		style:background={accent ?? 'transparent'}
 	></span>
-	<span class="mt-1 font-mono text-[10px] leading-none whitespace-nowrap text-[#777]"
+	<span class="mt-1 font-mono text-[10px] leading-none whitespace-nowrap {colors.textTertiary}"
 		>U+{codepoint.toString(16).toUpperCase().padStart(4, '0')}</span
 	>
 </div>

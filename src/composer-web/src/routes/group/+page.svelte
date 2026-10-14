@@ -6,21 +6,30 @@
 		type FitInfo,
 		type GlyphsPayload,
 		type GroupInfo
-	} from '#lib/api.js';
-	import { consoleStore } from '#lib/console.svelte.js';
-	import { installFontFaces } from '#lib/families.js';
-	import { clippedCount } from '#lib/fitDisplay.js';
-	import GlyphGrid from '#lib/GlyphGrid.svelte';
-	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE } from '#lib/glyphLayout.js';
-	import Toggle from '#lib/Toggle.svelte';
-	import ViewToggles from '#lib/ViewToggles.svelte';
-	import { viewOptions } from '#lib/viewOptions.svelte.js';
+	} from '#lib/data/api.js';
+	import { consoleStore } from '#lib/data/console.svelte.js';
+	import { installFontFaces } from '#lib/glyph/families.js';
+	import { clippedCount } from '#lib/glyph/fitDisplay.js';
+	import GlyphGrid from '#lib/glyph/GlyphGrid.svelte';
+	import PageHeader from '#lib/layout/PageHeader.svelte';
+	import { colors } from '#lib/styles.svelte.js';
+	import StickyBar from '#lib/layout/StickyBar.svelte';
+	import ThemeToggle from '#lib/toggle/ThemeToggle.svelte';
+	import { unicodeNames } from '#lib/data/unicodeNames.svelte.js';
+	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE } from '#lib/glyph/glyphLayout.js';
+	import Toggle from '#lib/toggle/Toggle.svelte';
+	import ViewToggles from '#lib/toggle/ViewToggles.svelte';
+	import { viewOptions } from '#lib/toggle/viewOptions.svelte.js';
 
 	const GLYPH_EM_PX = 64;
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';
 
 	const familyLabel = $derived(page.url.searchParams.get('family') ?? '');
 	const groupId = $derived(page.url.searchParams.get('group') ?? '');
+
+	$effect(() => {
+		void unicodeNames.load(groupId);
+	});
 	const snapshot = $derived(consoleStore.state);
 	const group = $derived(snapshot?.groups.find((entry) => entry.id === groupId));
 	const family = $derived(snapshot?.families.find((entry) => entry.label === familyLabel));
@@ -140,34 +149,39 @@
 	);
 </script>
 
-<p><a href="/" class="text-[#1b4965] underline">← coverage table</a></p>
+<PageHeader>
+	<div class="flex items-center justify-between gap-4">
+		<a href="/" class="underline {colors.textAccent1}">← coverage table</a>
+		<ThemeToggle />
+	</div>
 
-{#if snapshot === null}
-	<p class="mt-4 text-[#555]">{consoleStore.error ?? 'loading…'}</p>
-{:else if !group || !family}
-	<h1 class="mb-1 text-[1.4rem] font-semibold">
-		unknown family or group: {familyLabel} / {groupId}
-	</h1>
-{:else}
-	<h1 class="mb-1 text-[1.4rem] font-semibold">
-		{family.label} — {group.id}{group.atomic ? ' (atomic)' : ''}
-	</h1>
-	<p class="mt-0 max-w-5xl text-[#555]">
-		{group.label}; {group.total} code points; cell of base family
-		{base ? base.family : '(none configured)'}. Coverage shown for the family is that of its
-		reference style (the upright cut nearest Regular). Families are used in the order they are
-		chosen: a glyph comes from the first one that has it, the later ones fill in the rest.
-	</p>
-	{#if snapshot.uneven[family.label]?.includes(group.id)}
-		<p class="mt-0 max-w-5xl text-[#9c7c00]">
-			The styles of this family hold different glyphs of this group; check each one below.
-			The build takes each output style's glyphs from the matching style file.
+	{#if snapshot === null}
+		<p class="mt-4 mb-0 {colors.textSecondary}">{consoleStore.error ?? 'loading…'}</p>
+	{:else if !group || !family}
+		<h1 class="mt-4 mb-0 text-[1.4rem] font-semibold">
+			unknown family or group: {familyLabel} / {groupId}
+		</h1>
+	{:else}
+		<h1 class="mt-4 mb-1 text-[1.4rem] font-semibold">
+			{family.label} — {group.id}{group.atomic ? ' (atomic)' : ''}
+		</h1>
+		<p class="mt-0 mb-0 max-w-5xl {colors.textSecondary}">
+			{group.label}; {group.total} code points; cell of base family
+			{base ? base.family : '(none configured)'}. Coverage shown for the family is that of its
+			reference style (the upright cut nearest Regular). Families are used in the order they are
+			chosen: a glyph comes from the first one that has it, the later ones fill in the rest.
 		</p>
+		{#if snapshot.uneven[family.label]?.includes(group.id)}
+			<p class="mt-2 mb-0 max-w-5xl {colors.textWarning}">
+				<span class="block">The styles of this family hold different glyphs of this group; check each one below.</span>
+				<span class="block">The build takes each output style's glyphs from the matching style file.</span>
+			</p>
+		{/if}
 	{/if}
+</PageHeader>
 
-	<div
-		class="sticky top-0 z-10 flex flex-wrap items-center gap-y-1 border-b border-[#b9b9bd] bg-[#fafafa] py-2.5"
-	>
+{#if snapshot !== null && group && family}
+	<StickyBar>
 		<span class="mr-6">
 			<Toggle
 				label="use this family for this group"
@@ -177,28 +191,28 @@
 		</span>
 		{#if order.length > 0}
 			<a
-				class="mr-6 text-[#1b4965] underline"
+				class="mr-6 underline {colors.textAccent1}"
 				href="/compose?{new URLSearchParams({ group: groupId })}"
 				title="the glyphs of this group as combined from the chosen families"
 				>combined result →</a
 			>
 			<button
 				type="button"
-				class="mr-6 cursor-pointer rounded border border-[#b9b9bd] bg-white px-2 py-0.5 text-[0.9em]"
+				class="mr-6 cursor-pointer rounded border px-2 py-0.5 text-[0.9em] {colors.border} {colors.raisedControlBackground}"
 				onclick={() => change('clear')}
 			>
 				clear all families
 			</button>
 		{/if}
-		<span class="text-[0.9em]" class:text-[#1b4965]={!chooseError} class:text-[#b02e2e]={!!chooseError}>
+		<span class="text-[0.9em] {chooseError ? colors.textError : colors.textAccent1}">
 			{chooseStatus}
 		</span>
 		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
 			<ViewToggles groupTotal={group.total} />
 		</span>
-	</div>
+	</StickyBar>
 
-	<!-- All the styles scroll sideways together, so a column stays comparable across them. -->
+<!-- All the styles scroll sideways together, so a column stays comparable across them. -->
 	<div class="overflow-x-auto pb-4">
 
 	{#each family.styles as style, index (style.file)}
@@ -206,12 +220,12 @@
 		<section class={layoutMode === 'rows' ? 'w-max min-w-full' : ''}>
 			<div class="sticky left-0 w-fit max-w-[min(64rem,calc(100vw-4rem))]">
 				<h3 class="mt-4 mb-0.5 text-[1rem] font-semibold">{style.file} — {style.style}</h3>
-				<p class="mt-0 mb-1.5 text-[0.85em] text-[#666]">
+				<p class="mt-0 mb-1.5 text-[0.85em] {colors.textSecondary}">
 					weight {style.weight}, {style.italic ? 'italic' : 'upright'}, upm {style.unitsPerEm},
 					ascent {style.ascent}, descent {style.descent}, cell advance {style.cellAdvance};
 					group coverage {present}/{total}{#if group.total > FULL_GRID_MAX}; only the glyphs
 						this style holds are drawn{/if}{#if viewOptions.unfitted && clippedIn(style.file) > 0}; <span
-							class="font-semibold text-[#c62828]"
+							class="font-semibold {colors.textClipped}"
 							>{clippedIn(style.file)} glyph{clippedIn(style.file) === 1 ? '' : 's'} cut off
 							by the base cell (red outline)</span
 						>{/if}
@@ -219,11 +233,11 @@
 			</div>
 			<div class="mt-2 mb-10">
 				{#if currentGlyphs === null}
-					<p class="m-0 text-[14px] text-[#555]">{glyphsError ?? 'loading glyphs…'}</p>
+					<p class="m-0 text-[14px] {colors.textSecondary}">{glyphsError ?? 'loading glyphs…'}</p>
 				{:else}
 					{@const cells = visibleCells(style.file, group)}
 					{#if cells.length === 0}
-						<p class="m-0 text-[14px] text-[#b02e2e]">this style holds no glyph of this group</p>
+						<p class="m-0 text-[14px] {colors.textError}">this style holds no glyph of this group</p>
 					{:else}
 						<GlyphGrid
 							groupId={group.id}
@@ -241,7 +255,7 @@
 				{#if remaining > 0}
 					<button
 						type="button"
-						class="sticky left-0 mb-8 cursor-pointer rounded border border-[#b9b9bd] bg-[#f0f0f4] px-3 py-1"
+						class="sticky left-0 mb-8 cursor-pointer rounded border px-3 py-1 {colors.border} {colors.quietControlBackground}"
 						onclick={() => showMore(style.file)}
 					>
 						show {Math.min(PAGE_SIZE, remaining)} more ({remaining} not shown)

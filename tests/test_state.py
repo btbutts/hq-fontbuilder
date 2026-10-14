@@ -7,9 +7,11 @@ import tomllib
 from http import HTTPStatus
 from pathlib import Path
 
+import pytest
 from support import FontSpec, NameSpec, build_font
 
 from font_composer.common.config import Config
+from font_composer.common.names import UnicodeNames
 from font_composer.composer.state import ConsoleState
 
 COMMENTED = """\
@@ -126,6 +128,7 @@ def test_the_composition_fills_gaps_in_order_and_counts_sources(tmp_path: Path) 
     assert payload["missing"] == payload["total"] - ARROWS_IN_FIXTURE
     assert payload["fonts"] == {"Alpha": "Alpha-Regular.ttf", "Beta": "Beta-Regular.ttf",
                                 "Gamma": "Gamma-Regular.ttf"}
+    assert set(payload["familyNames"]) == {"Alpha", "Beta", "Gamma"}  # the TTFs' own names
     summary = {entry["group"]: entry for entry in state.snapshot()["summary"]}["arrows"]
     assert summary["order"] == ["Alpha", "Beta", "Gamma"]
     assert summary["covered"] == ARROWS_IN_FIXTURE
@@ -178,6 +181,9 @@ def test_the_style_map_resolves_output_styles_and_takes_overrides(tmp_path: Path
     state.choose("arrows", "Beta", "add")
     style_map = state.snapshot()["styleMap"]
     assert style_map["outputStyles"] == ["Regular", "Bold"]
+    files = {item["file"]: item for item in style_map["families"]["Beta"]}
+    assert files["Beta-Bold.ttf"]["family"] == "Test Family"  # the TTF's own, not the folder's
+    assert files["Beta-Bold.ttf"]["style"] == "Bold"
     assert style_map["entries"]["Regular"]["Beta"]["file"] == "Beta-Regular.ttf"
     assert style_map["entries"]["Bold"]["Beta"]["file"] == "Beta-Bold.ttf"
     assert not style_map["entries"]["Bold"]["Beta"]["overridden"]
@@ -275,3 +281,42 @@ def test_glyphs_that_leave_the_base_cell_carry_a_fit_plan(tmp_path: Path) -> Non
     by_cp = {glyph["codepoint"]: glyph for glyph in payload["glyphs"]}
     assert by_cp[ARROW_LEFT]["fit"]["kind"] == "oversize"
     assert "fit" not in by_cp[ARROW_UP]
+
+
+def test_official_names_are_served_per_group(tmp_path: Path) -> None:
+    """Return the names of a group's code points, as strings keyed by code point."""
+    names_path = tmp_path / "NamesList.txt"
+    names_path.write_text("2190\tLEFTWARDS ARROW\n2191\tUPWARDS ARROW\n0041\tLATIN A\n",
+                          encoding="utf-8")
+    fonts = tmp_path / "fonts"
+    (fonts / "Alpha").mkdir(parents=True)
+    build_font(fonts / "Alpha" / "Alpha-Regular.ttf", codepoints=[ord("M")])
+    config_path = tmp_path / "composer.toml"
+    config_path.write_text("", encoding="utf-8")
+    state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(names_path))
+    status, payload = state.glyph_names("arrows")
+    assert status == HTTPStatus.OK
+    assert payload["names"] == {"8592": "LEFTWARDS ARROW", "8593": "UPWARDS ARROW"}
+    assert state.glyph_names("nonsense")[0] == HTTPStatus.BAD_REQUEST
+
+
+def test_box_lines_that_overshoot_the_block_on_purpose_do_not_shrink_the_family(
+    tmp_path: Path,
+) -> None:
+    """Fit connectors by their frame (the full block); the overshoot is cut by the cell."""
+    fonts = tmp_path / "fonts"
+    for label in ("Alpha", "Beta"):
+        (fonts / label).mkdir(parents=True)
+    build_font(fonts / "Alpha" / "Alpha-Regular.ttf", codepoints=[ord("M")])  # 600 x 1000 cell
+    # Beta: a full block exactly its cell, and a vertical line 0.2 em past it both ways
+    build_font(fonts / "Beta" / "Beta-Regular.ttf", codepoints=[ord("M"), 0x2588, 0x2502],
+               ink={0x2588: (0, -200, 600, 800), 0x2502: (250, -400, 350, 1000)})
+    config_path = tmp_path / "composer.toml"
+    config_path.write_text('[cell]\nbase = "Alpha"\n', encoding="utf-8")
+    state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(tmp_path / "none.txt"))
+    state.choose("box-drawing", "Beta", "add")  # refused: atomic and incomplete; fit is independent
+    status, glyphs = state.glyphs("Beta", "box-drawing")
+    assert status == HTTPStatus.OK
+    line = glyphs["fit"]["Beta-Regular.ttf"][str(0x2502)]
+    assert line["sy"] == pytest.approx(1.0)  # not shrunk to swallow the overshoot
+    assert line["clip"]  # drawn cut at the cell edge, as the renderer will

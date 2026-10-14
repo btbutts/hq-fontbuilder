@@ -7,20 +7,29 @@
 		type ChooseAction,
 		type Composition,
 		type ResolvedGlyph
-	} from '#lib/api.js';
-	import { consoleStore } from '#lib/console.svelte.js';
-	import { familyColor, familyCssName, fontFaceRules, installFontFaces } from '#lib/families.js';
-	import GlyphChooser, { type Candidate } from '#lib/GlyphChooser.svelte';
-	import { clippedCount } from '#lib/fitDisplay.js';
-	import GlyphGrid from '#lib/GlyphGrid.svelte';
-	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE, type LayoutCell } from '#lib/glyphLayout.js';
-	import ViewToggles from '#lib/ViewToggles.svelte';
-	import { viewOptions } from '#lib/viewOptions.svelte.js';
+	} from '#lib/data/api.js';
+	import { consoleStore } from '#lib/data/console.svelte.js';
+	import { familyColor, familyCssName, fontFaceRules, installFontFaces } from '#lib/glyph/families.js';
+	import GlyphChooser, { type Candidate } from '#lib/glyph/GlyphChooser.svelte';
+	import { clippedCount } from '#lib/glyph/fitDisplay.js';
+	import GlyphGrid from '#lib/glyph/GlyphGrid.svelte';
+	import PageHeader from '#lib/layout/PageHeader.svelte';
+	import { colors } from '#lib/styles.svelte.js';
+	import StickyBar from '#lib/layout/StickyBar.svelte';
+	import ThemeToggle from '#lib/toggle/ThemeToggle.svelte';
+	import { unicodeNames } from '#lib/data/unicodeNames.svelte.js';
+	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE, type LayoutCell } from '#lib/glyph/glyphLayout.js';
+	import ViewToggles from '#lib/toggle/ViewToggles.svelte';
+	import { viewOptions } from '#lib/toggle/viewOptions.svelte.js';
 
 	const GLYPH_EM_PX = 64;
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';
 
 	const groupId = $derived(page.url.searchParams.get('group') ?? '');
+
+	$effect(() => {
+		void unicodeNames.load(groupId);
+	});
 	const snapshot = $derived(consoleStore.state);
 	const group = $derived(snapshot?.groups.find((entry) => entry.id === groupId));
 	const geometry = $derived(geometryFor(snapshot?.base ?? null, GLYPH_EM_PX));
@@ -113,17 +122,10 @@
 
 	// ---- the pop-out for choosing one glyph
 
-	let chooser = $state<{
-		codepoint: number;
-		anchor: { left: number; top: number; bottom: number };
-	} | null>(null);
+	let chooser = $state.raw<{ codepoint: number; anchor: HTMLElement } | null>(null);
 
 	function openChooser(cell: LayoutCell, element: HTMLElement): void {
-		const rect = element.getBoundingClientRect();
-		chooser = {
-			codepoint: cell.codepoint,
-			anchor: { left: rect.left, top: rect.top, bottom: rect.bottom }
-		};
+		chooser = { codepoint: cell.codepoint, anchor: element };
 	}
 
 	const chooserGlyph = $derived(chooser ? bySource.get(chooser.codepoint) : undefined);
@@ -132,9 +134,9 @@
 			const index = current?.order.indexOf(family) ?? 0;
 			return {
 				family,
+				label: current?.familyNames[family] ?? family,
 				cssName: familyCssName(index),
-				color: familyColor(index),
-				rank: index + 1
+				color: familyColor(index)
 			};
 		})
 	);
@@ -152,112 +154,123 @@
 	}
 </script>
 
-<p><a href="/" class="text-[#1b4965] underline">← coverage table</a></p>
+<PageHeader>
+	<div class="flex items-center justify-between gap-4">
+		<a href="/" class="underline {colors.textAccent1}">← coverage table</a>
+		<ThemeToggle />
+	</div>
 
-{#if snapshot === null}
-	<p class="mt-4 text-[#555]">{consoleStore.error ?? 'loading…'}</p>
-{:else if !group}
-	<h1 class="mb-1 text-[1.4rem] font-semibold">unknown group: {groupId}</h1>
-{:else if current === null}
-	<p class="mt-4 text-[#555]">{loadError ?? 'loading…'}</p>
-{:else}
-	<h1 class="mb-1 text-[1.4rem] font-semibold">
-		{group.id}{group.atomic ? ' (atomic)' : ''} — combined result
-	</h1>
-	<p class="mt-0 max-w-5xl text-[#555]">
-		{group.label}; {group.total - current.missing} of {group.total} code points have a glyph.
-		{#if group.atomic}
-			An atomic group comes from one family, so its glyphs cannot be mixed.
-		{:else}
-			A glyph is taken from the first family of the inheritance order that has it. A ring in
-			the corner of a cell marks a glyph that more than one family has; click it to choose
-			which family draws it. A filled dot marks a glyph you pinned.
-		{/if}
-	</p>
-
-	<h2 class="mt-5 mb-1 text-[1rem] font-semibold">Font inheritance order</h2>
-	{#if current.order.length === 0}
-		<p class="mt-0 text-[#b02e2e]">
-			No family is chosen for this group. Open a family from the coverage table to add it.
+	{#if snapshot === null}
+		<p class="mt-4 mb-0 {colors.textSecondary}">{consoleStore.error ?? 'loading…'}</p>
+	{:else if !group}
+		<h1 class="mt-4 mb-0 text-[1.4rem] font-semibold">unknown group: {groupId}</h1>
+	{:else if current === null}
+		<p class="mt-4 mb-0 {colors.textSecondary}">{loadError ?? 'loading…'}</p>
+	{:else}
+		<h1 class="mt-4 mb-1 text-[1.4rem] font-semibold">
+			{group.id}{group.atomic ? ' (atomic)' : ''} — combined result
+		</h1>
+		<p class="mt-0 mb-0 max-w-5xl {colors.textSecondary}">
+			{group.label}; {group.total - current.missing} of {group.total} code points have a glyph.
+			{#if group.atomic}
+				An atomic group comes from one family, so its glyphs cannot be mixed.
+			{:else}
+				A glyph is taken from the first family of the inheritance order that has it. A ring in
+				the corner of a cell marks a glyph that more than one family has; click it to choose
+				which family draws it. A filled dot marks a glyph you pinned.
+			{/if}
 		</p>
-	{/if}
-	<ol class="m-0 list-none p-0">
-		{#each current.order as family, index (family)}
-			<li class="flex items-center gap-2 py-0.5">
-				<span
-					class="inline-block h-3 w-3 rounded-sm"
-					style:background={familyColor(index)}
-					aria-hidden="true"
-				></span>
-				<span class="w-5 text-right text-[#777]">{index + 1}.</span>
-				<span class="font-medium">{family}</span>
-				<span class="text-[0.85em] text-[#777]">
-					{current.contributions[family] ?? 0} glyph{current.contributions[family] === 1
-						? ''
-						: 's'} used
-				</span>
-				<button
-					type="button"
-					class="cursor-pointer rounded border border-[#b9b9bd] bg-white px-1.5 disabled:opacity-30"
-					title="earlier in the order"
-					disabled={index === 0}
-					onclick={() => change('up', family)}>▲</button
-				>
-				<button
-					type="button"
-					class="cursor-pointer rounded border border-[#b9b9bd] bg-white px-1.5 disabled:opacity-30"
-					title="later in the order"
-					disabled={index === current.order.length - 1}
-					onclick={() => change('down', family)}>▼</button
-				>
-				<button
-					type="button"
-					class="cursor-pointer rounded border border-[#b9b9bd] bg-white px-1.5 text-[#b02e2e]"
-					title="leave out of this group"
-					onclick={() => change('remove', family)}>✕</button
-				>
-			</li>
-		{/each}
-	</ol>
-	{#if unusedFamilies.length > 0 && !(group.atomic && current.order.length > 0)}
-		<label class="mt-2 inline-block text-[0.9em]">
-			add a family at the end:
-			<select
-				class="ml-1 rounded border border-[#b9b9bd] bg-white px-1 py-0.5"
-				onchange={(event) => {
-					const family = event.currentTarget.value;
-					event.currentTarget.value = '';
-					if (family) void change('add', family);
-				}}
-			>
-				<option value="">choose…</option>
-				{#each unusedFamilies as family (family)}
-					<option value={family}>{family}</option>
-				{/each}
-			</select>
-		</label>
-	{/if}
-	{#if actionError}
-		<p class="mt-2 mb-0 text-[#b02e2e]">{actionError}</p>
-	{/if}
-	{#if current.invalidOverrides.length > 0}
-		<div class="mt-3 max-w-5xl rounded border border-[#9c7c00] bg-[#fff8e1] px-3 py-2 text-[0.9em]">
-			Some pinned glyphs in the configuration cannot be honoured and are ignored:
-			<ul class="m-0 pl-5">
-				{#each current.invalidOverrides as item (item.codepoint)}
-					<li><span class="font-mono">{hex(item.codepoint)}</span> → {item.family}: {item.reason}</li>
-				{/each}
-			</ul>
-		</div>
-	{/if}
 
-	<div
-		class="sticky top-0 z-10 mt-4 flex items-center border-b border-[#b9b9bd] bg-[#fafafa] py-2"
-	>
-		<span class="text-[0.9em] text-[#555]">
+		<h2 class="mt-5 mb-1 text-[1rem] font-semibold">Font inheritance order</h2>
+		{#if current.order.length === 0}
+			<p class="mt-0 mb-0 {colors.textError}">
+				No family is chosen for this group. Open a family from the coverage table to add it.
+			</p>
+		{/if}
+		<!--
+			One grid for the whole list; every row is a subgrid of it, so the columns line up
+			across rows (names are the widest column, the counts start after the longest name, the
+			buttons share their columns) without drawing a table.
+		-->
+		<ol class="m-0 grid w-fit list-none grid-cols-[repeat(7,auto)] gap-x-2 p-0">
+			{#each current.order as family, index (family)}
+				<li class="col-span-full grid grid-cols-subgrid items-center py-0.5">
+					<span
+						class="inline-block h-3 w-3 rounded-sm bg-current {familyColor(index)}"
+						aria-hidden="true"
+					></span>
+					<span class="text-right {colors.textTertiary}">{index + 1}.</span>
+					<span class="font-medium">{family}</span>
+					<span class="pl-4 text-[0.85em] whitespace-nowrap {colors.textTertiary}">
+						{current.contributions[family] ?? 0} glyph{current.contributions[family] === 1
+							? ''
+							: 's'} used
+					</span>
+					<button
+						type="button"
+						class="ml-4 w-7 cursor-pointer justify-self-center rounded border px-0 disabled:opacity-30 {colors.border} {colors.raisedControlBackground}"
+						title="earlier in the order"
+						disabled={index === 0}
+						onclick={() => change('up', family)}>▲</button
+					>
+					<button
+						type="button"
+						class="w-7 cursor-pointer justify-self-center rounded border px-0 disabled:opacity-30 {colors.border} {colors.raisedControlBackground}"
+						title="later in the order"
+						disabled={index === current.order.length - 1}
+						onclick={() => change('down', family)}>▼</button
+					>
+					<button
+						type="button"
+						class="w-7 cursor-pointer justify-self-center rounded border px-0 {colors.border} {colors.raisedControlBackground} {colors.textError}"
+						title="leave out of this group"
+						onclick={() => change('remove', family)}>✕</button
+					>
+				</li>
+			{/each}
+		</ol>
+		{#if unusedFamilies.length > 0 && !(group.atomic && current.order.length > 0)}
+			<label class="mt-2 inline-block text-[0.9em]">
+				add a family at the end:
+				<select
+					class="ml-1 rounded border px-1 py-0.5 {colors.border} {colors.raisedControlBackground}"
+					onchange={(event) => {
+						const family = event.currentTarget.value;
+						event.currentTarget.value = '';
+						if (family) void change('add', family);
+					}}
+				>
+					<option value="">choose…</option>
+					{#each unusedFamilies as family (family)}
+						<option value={family}>{family}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
+		{#if actionError}
+			<p class="mt-2 mb-0 {colors.textError}">{actionError}</p>
+		{/if}
+		{#if current.invalidOverrides.length > 0}
+			<div
+				class="mt-3 max-w-5xl rounded border px-3 py-2 text-[0.9em] {colors.warningBoxBorder} {colors.warningBoxBackground}"
+			>
+				Some pinned glyphs in the configuration cannot be honoured and are ignored:
+				<ul class="m-0 pl-5">
+					{#each current.invalidOverrides as item (item.codepoint)}
+						<li><span class="font-mono">{hex(item.codepoint)}</span> → {item.family}: {item.reason}</li>
+					{/each}
+				</ul>
+			</div>
+		{/if}
+	{/if}
+</PageHeader>
+
+{#if snapshot !== null && group && current !== null}
+	<StickyBar>
+		<span class="text-[0.9em] {colors.textSecondary}">
 			Glyphs are drawn from each family's reference style (the upright cut nearest Regular).
 			{#if viewOptions.unfitted && clippedTotal > 0}
-				<span class="font-semibold text-[#c62828]"
+				<span class="font-semibold {colors.textClipped}"
 					>{clippedTotal} glyph{clippedTotal === 1 ? ' is' : 's are'} cut off by the base cell
 					(red outline).</span
 				>
@@ -266,11 +279,11 @@
 		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
 			<ViewToggles groupTotal={group.total} />
 		</span>
-	</div>
+	</StickyBar>
 
 	<div class="overflow-x-auto py-4">
 		{#if cells.length === 0}
-			<p class="m-0 text-[#b02e2e]">no family of this group has a glyph in it</p>
+			<p class="m-0 {colors.textError}">no family of this group has a glyph in it</p>
 		{:else}
 			<GlyphGrid
 				groupId={group.id}
@@ -284,7 +297,7 @@
 			{#if large && current.glyphs.length > shown}
 				<button
 					type="button"
-					class="mt-4 cursor-pointer rounded border border-[#b9b9bd] bg-[#f0f0f4] px-3 py-1"
+					class="mt-4 cursor-pointer rounded border px-3 py-1 {colors.border} {colors.quietControlBackground}"
 					onclick={() => (shown += PAGE_SIZE)}
 				>
 					show {Math.min(PAGE_SIZE, current.glyphs.length - shown)} more ({current.glyphs.length -
@@ -296,14 +309,17 @@
 {/if}
 
 {#if chooser && chooserGlyph && candidates.length > 0}
-	<GlyphChooser
-		codepoint={chooser.codepoint}
-		{candidates}
-		current={chooserGlyph.source}
-		pinned={chooserGlyph.overridden === true}
-		{geometry}
-		anchor={chooser.anchor}
-		onchoose={choose}
-		onclose={() => (chooser = null)}
-	/>
+	<!-- keyed, so that another glyph's pop-up is a new one placed next to its own cell -->
+	{#key chooser.codepoint}
+		<GlyphChooser
+			codepoint={chooser.codepoint}
+			{candidates}
+			current={chooserGlyph.source}
+			pinned={chooserGlyph.overridden === true}
+			{geometry}
+			anchor={chooser.anchor}
+			onchoose={choose}
+			onclose={() => (chooser = null)}
+		/>
+	{/key}
 {/if}

@@ -4,19 +4,14 @@
  * each family's reference style available to SVG text under a short CSS name.
  */
 
-const FAMILY_COLORS = [
-	'#1b4965',
-	'#c1440e',
-	'#2d6a4f',
-	'#7b2cbf',
-	'#9a6b00',
-	'#0077b6',
-	'#b5179e',
-	'#5f6c37'
-];
+import { colors } from '../styles.svelte';
 
+/**
+ * The colour of the family at `index` of an inheritance order, from `colors.family`: a
+ * text colour class, to be used with `bg-current`, `fill-current` or `stroke-current`.
+ */
 export function familyColor(index: number): string {
-	return FAMILY_COLORS[index % FAMILY_COLORS.length] ?? '#1b4965';
+	return colors.family[index % colors.family.length] ?? '';
 }
 
 /** The CSS font-family name the font-face rule below gives the family at `index`. */

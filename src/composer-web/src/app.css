@@ -1,1 +1,8 @@
 @import 'tailwindcss';
+
+/*
+ * Tailwind's `dark:` variant follows the `dark` class on <html> (toggled by `theme` in
+ * lib/styles.svelte.ts) rather than the system setting. Nothing else lives here: every
+ * colour of the site is defined in lib/styles.svelte.ts.
+ */
+@custom-variant dark (&:where(.dark, .dark *));

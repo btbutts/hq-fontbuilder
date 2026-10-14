@@ -62,6 +62,8 @@ export interface SummaryEntry {
 
 export interface StyleFileInfo {
 	file: string;
+	/** the family name the font file itself carries (name table), not its folder */
+	family: string;
 	style: string;
 	weight: number;
 	italic: boolean;
@@ -109,7 +111,7 @@ export interface ComposerState {
 
 /** How a glyph relates to the base cell, and the correction that fixes it. */
 export interface FitInfo {
-	kind: 'bleed' | 'frame' | 'oversize' | 'offset';
+	kind: 'bleed' | 'frame' | 'oversize' | 'offset' | 'category' | 'connector';
 	/** x' = sx * x + dx and y' = sy * y + dy, in em, y up from the baseline */
 	sx: number;
 	sy: number;
@@ -121,6 +123,8 @@ export interface FitInfo {
 	residual: number;
 	/** true when ink is cut off by the cell (past a bleed) */
 	clipped: boolean;
+	/** a connector: its deliberate overshoot is cut at the cell edge, as the renderer will */
+	clip: boolean;
 }
 
 export interface GlyphsPayload {
@@ -135,6 +139,18 @@ export interface GlyphsPayload {
 export interface ChooseResult {
 	ok: boolean;
 	error?: string;
+}
+
+export interface NamesPayload {
+	group: string;
+	/** code point -> official Unicode name, for those that have one */
+	names: Record<string, string>;
+}
+
+export async function fetchNames(group: string): Promise<NamesPayload> {
+	const response = await fetch(`/api/names?${new URLSearchParams({ group })}`);
+	if (!response.ok) throw new Error(`/api/names: ${response.status}`);
+	return (await response.json()) as NamesPayload;
 }
 
 export type ChooseAction = 'add' | 'remove' | 'up' | 'down' | 'clear';
@@ -158,6 +174,8 @@ export interface Composition {
 	order: string[];
 	/** family -> the style file its glyphs are drawn from (the reference style) */
 	fonts: Record<string, string>;
+	/** family -> the family name its font file carries ("FiraMono Nerd Font"), for display */
+	familyNames: Record<string, string>;
 	/** the code points that some family has, in code point order */
 	glyphs: ResolvedGlyph[];
 	missing: number;

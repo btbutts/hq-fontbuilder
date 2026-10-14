@@ -27,6 +27,7 @@ from font_composer.common.config import Config, ConfigError
 from font_composer.common.groups import GROUPS, coverage
 from font_composer.common.inspect import FontError, FontInfo, read_font
 from font_composer.common.library import FontLibrary
+from font_composer.common.names import ensure_names_list
 from font_composer.common.paths import DEFAULT_CONFIG, DEFAULT_FONTS_DIR
 from font_composer.composer.web.ports import PORT_RANGES, PortUnavailableError
 from font_composer.composer.web.server import DEFAULT_HOST, serve
@@ -228,6 +229,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "inspect":
         return run_inspect(args.files)
+    if args.command in {"compose", "build"}:
+        # glyph names for the console's tooltips and the build's reports; not fatal
+        ensure_names_list(say=lambda message: print(message, file=sys.stderr))
     if args.command == "compose":
         return run_compose(args.fonts_dir, args.config, args.host, args.port,
                            monitor=args.monitor)

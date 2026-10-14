@@ -9,6 +9,8 @@ Routes:
   of the configuration file).
 * ``GET /api/glyphs?family=F&group=G`` — for each style file of a family, the code
   points of the group it holds (the group page draws only those).
+* ``GET /api/names?group=G`` — the official Unicode names of the group's code points
+  (from ``NamesList.txt``; empty when the list is not available).
 * ``GET /api/composition?group=G`` — the group resolved through its inheritance
   order and the glyph overrides: for every code point some family has, its source and
   the other families that could serve it.
@@ -167,6 +169,10 @@ class _Handler(BaseHTTPRequestHandler):
             query = parse_qs(parsed.query)
             status, payload = self._state.glyphs(
                 query.get("family", [""])[0], query.get("group", [""])[0])
+            self._send_json(payload, status=status)
+        elif path == "/api/names":
+            status, payload = self._state.glyph_names(
+                parse_qs(parsed.query).get("group", [""])[0])
             self._send_json(payload, status=status)
         elif path == "/api/composition":
             status, payload = self._state.composition(

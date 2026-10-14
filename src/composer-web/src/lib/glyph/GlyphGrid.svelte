@@ -7,6 +7,7 @@
 		type LayoutCell,
 		type LayoutMode
 	} from './glyphLayout';
+	import { colors } from '../styles.svelte';
 
 	interface Props {
 		groupId: string;
@@ -31,8 +32,7 @@
 	{#if onpick && (cell.alternatives ?? 0) > 1}
 		<button
 			type="button"
-			class="shrink-0 cursor-pointer rounded border-0 bg-transparent p-0 hover:bg-[#eef3f7] focus-visible:outline-2 focus-visible:outline-[#1b4965]"
-			title="U+{cell.codepoint.toString(16).toUpperCase().padStart(4, '0')}: {cell.alternatives} families have this glyph — click to choose"
+			class="shrink-0 cursor-pointer rounded border-0 bg-transparent p-0 focus-visible:outline-2 {colors.hoverBackground} {colors.focusOutline}"
 			onclick={(event) => onpick(cell, event.currentTarget)}
 		>
 			<GlyphCell
@@ -44,6 +44,7 @@
 				pinned={cell.pinned}
 				fit={cell.fit}
 				{showFitted}
+				hint="{cell.alternatives} families have this glyph: click to choose"
 				choosable
 			/>
 		</button>
@@ -73,7 +74,7 @@
 		{#each rows as row (row.label)}
 			<div class="flex flex-nowrap items-start gap-x-0.5">
 				<span
-					class="shrink-0 pr-2 pt-1 text-right font-mono text-[11px] whitespace-nowrap text-[#555]"
+					class="shrink-0 pr-2 pt-1 text-right font-mono text-[11px] whitespace-nowrap {colors.textSecondary}"
 					style:width="64px"
 				>
 					{row.label}

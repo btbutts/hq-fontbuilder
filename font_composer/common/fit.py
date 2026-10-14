@@ -64,7 +64,7 @@ _OVERLAP = 0.05       # how far a rule may overlap its neighbours and still join
 _SAME_CELL = 0.002    # em: cells closer than this are the same cell
 _SPANS = 0.45         # of the reference's height a connecting glyph covers at least
 
-Kind = Literal["fits", "bleed", "frame", "oversize", "offset", "category"]
+Kind = Literal["fits", "bleed", "frame", "oversize", "offset", "category", "connector"]
 
 
 @dataclass(frozen=True)
@@ -119,6 +119,15 @@ class FitPlan:
     overflow: float = 0.0
     #: how far the corrected ink still leaves it (clipped excess of a frame glyph)
     residual: float = 0.0
+
+    @property
+    def clip(self) -> bool:
+        """True for a connector the renderer is expected to cut at the cell edge.
+
+        Its overshoot is deliberate (it makes neighbours overlap), so the fitted preview
+        does not draw what lies outside the cell.
+        """
+        return self.kind == "connector"
 
     @property
     def identity(self) -> bool:
@@ -371,11 +380,12 @@ def plan_in_class(ink: Box | None, shared: ClassFit, base: CellSpec) -> FitPlan:
     only the shared map, so that all of them keep lining up.
     """
     plan = shared.plan
+    kind: Kind = "connector" if shared.name == "connectors" else "category"
     if ink is None or ink.width <= 0 or ink.height <= 0:
-        return plan
+        return FitPlan(kind, plan.sx, plan.sy, plan.dx, plan.dy)
     overflow = overflow_of(ink, base.box)
     if shared.name == "text" and overflow_of(plan.apply(ink), base.box) > EPS:
         extra = _contain_plan(plan.apply(ink), base, on_baseline=True)
         plan = plan.then(extra)
-    return FitPlan("category", plan.sx, plan.sy, plan.dx, plan.dy, overflow,
+    return FitPlan(kind, plan.sx, plan.sy, plan.dx, plan.dy, overflow,
                    overflow_of(plan.apply(ink), base.box))

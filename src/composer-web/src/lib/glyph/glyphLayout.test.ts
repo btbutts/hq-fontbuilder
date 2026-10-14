@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { layoutCells, type LayoutCell } from './glyphLayout.ts';
+import { chooserGrid, layoutCells, type LayoutCell } from './glyphLayout.ts';
 
 function cells(...ranges: [number, number][]): LayoutCell[] {
 	const out: LayoutCell[] = [];
@@ -52,4 +52,14 @@ test('trailing holes are trimmed and five-digit code points keep their row label
 	const rows = layoutCells('nerd-icons', cells([0xf0000, 0xf0002]), 'rows');
 	assert.deepEqual(rows[0]?.label, 'U+F000_');
 	assert.equal(rows[0]?.cells.length, 3);
+});
+
+test('the chooser grid: one row to three, then as square as it goes, five at most per row', () => {
+	const shape = (count: number): string => {
+		const { columns, rows } = chooserGrid(count);
+		return `${columns}x${rows}`;
+	};
+	assert.deepEqual([1, 2, 3].map(shape), ['1x1', '2x1', '3x1']);
+	assert.deepEqual([4, 5, 6, 7, 8, 9, 10].map(shape), ['2x2', '3x2', '3x2', '4x2', '4x2', '5x2', '5x2']);
+	assert.deepEqual([11, 12, 13, 15].map(shape), ['4x3', '4x3', '5x3', '5x3']);
 });

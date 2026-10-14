@@ -144,8 +144,8 @@ In the console:
   digit). The page scrolls sideways when a row is wider than the window. The
   **Enable glyph wrapping** switch at the top right of the page gives one wrapping run
   instead (the choice is remembered by the browser). The layout code is in
-  `src/composer-web/src/lib/glyphLayout.ts` (pure functions, `npm test`) and
-  `GlyphGrid.svelte`.
+  `src/composer-web/src/lib/glyph/glyphLayout.ts` (pure functions, `npm test`) and
+  `glyph/GlyphGrid.svelte`.
 * The **checkbox on the group page** (`use this family for this group`) adds the family
   to the group's **inheritance order**, at the end; unchecking removes it. Choose the
   families one after the other: the first is the group's first choice, and each following
@@ -164,9 +164,15 @@ In the console:
   it and a pop-out shows each family's version side by side; click one to pin that
   glyph to that family (a filled dot), or choose "use the inheritance order again". Pins
   are written to `[glyphs]`. Atomic groups cannot be mixed, so they have no pop-out.
-* The **Style mapping** page (a link at the top of the main page) shows, for every
-  output style and every family in use, which of the family's style files serves it, and
-  lets you pick another. See "How style files are matched" below.
+* The **Style mapping** dialog (the button at the top right of the main page) shows, for
+  every family in use (rows) and every output style (columns), which of the family's
+  style files serves it, and lets you pick another. See "How style files are matched"
+  below.
+* **Hover a glyph** for its official Unicode name (from the Unicode Character Database's
+  `NamesList.txt`, which the console downloads to `src/char-sets/` the first time it
+  needs it and which is never committed), its code point, and what the fit does to it.
+* The **Dark mode** switch (top right) follows your system until you use it, then
+  remembers your choice.
 
 ## _The configuration file_
 
@@ -237,7 +243,8 @@ Two ways of fitting, by category:
 | `oversize` | a symbol wider or taller than the cell (`↔ ⇔ ⌫ ☑ ❤`) | scaled uniformly to fit |
 | `offset` | fits in size, sits partly outside (another line box, e.g. Nerd Font icons 0.03 em under the descent) | moved the least that brings it inside |
 
-The preview is a visualisation: it draws each glyph through the plan, but where box
+Connectors that run past the cell on purpose (Fira Code's box lines) are fitted by their
+frame and cut at the cell edge, not shrunk. The preview is a visualisation: it draws each glyph through the plan, but where box
 drawing must also *join* its neighbours the build needs more than this (see the plan
 document, "Glyph fitting").
 
@@ -260,7 +267,7 @@ by these rules, in order:
    equally near: the lighter one.
 
 Medium (500) and Black (900) are different weights and are never folded together. The
-Style mapping page shows the result and the reason for every pair. (Variable fonts are
+Style mapping dialog shows the result and the reason for every pair. (Variable fonts are
 read as their default instance for now; the build will instantiate them.)
 
 ## Development
@@ -283,6 +290,22 @@ app whose source lives in `src/composer-web/` (requires Node/npm). Compile it wi
 
 or, from inside `src/composer-web/`, `npm run build` directly (`npm run check` runs
 svelte-check, TypeScript strict; `npm test` runs the glyph layout unit tests).
+
+**Layout of `src/composer-web/src/`.** `routes/` holds the three pages (the coverage table,
+a family's glyphs of one group, the combined result). `lib/` holds the reusable parts,
+one folder per kind:
+
+| Path | What is in it |
+|---|---|
+| `lib/styles.svelte.ts` | every colour of the site (`colors.<purpose>`, light and dark side by side) and the `theme` rune; the only place a colour is written |
+| `lib/glyph/` | drawing glyphs: `GlyphCell`, `GlyphGrid`, `GlyphChooser` (the per-glyph pop-up), `glyphLayout` (pure, tested), `fitDisplay`, `families` (family colours, @font-face) |
+| `lib/toggle/` | switches: `Toggle`, `ThemeToggle`, `ViewToggles`, and `viewOptions` (the state they set) |
+| `lib/modal/` | dialogs: `StyleMappingModal` |
+| `lib/layout/` | page structure: `PageHeader` (the full-width band) and `StickyBar` (the toolbar that sticks) |
+| `lib/tooltip/` | the single tooltip host and the `tip()` helper elements use to describe themselves |
+| `lib/data/` | talking to the Python console: `api` (types and requests), `console` (the polling store), `unicodeNames` |
+
+`app.css` only imports Tailwind and declares the class-based `dark:` variant.
 
 **Python owns the webserver.** `python -m font_composer compose` is the only process
 you run: it watches the fonts directory, serves the JSON API and font files, and hosts
