@@ -1,16 +1,20 @@
 <script lang="ts">
+	import type { IconComponent } from '../button/presets';
 	import { colors } from '../styles.svelte';
 	import { tip } from '../tooltip/tooltip';
 
 	interface Props {
 		checked: boolean;
+		/** the text beside the switch; with an `icon` it is only the accessible name */
 		label: string;
+		/** drawn beside the switch instead of the label's text */
+		icon?: IconComponent;
 		title?: string;
 		disabled?: boolean;
 		onchange?: (checked: boolean) => void;
 	}
 
-	let { checked, label, title, disabled = false, onchange }: Props = $props();
+	let { checked, label, icon: Icon, title, disabled = false, onchange }: Props = $props();
 </script>
 
 <!-- An on/off switch: a button with role "switch", so it works from the keyboard too. -->
@@ -19,6 +23,7 @@
 	role="switch"
 	aria-checked={checked}
 	{disabled}
+	aria-label={Icon ? label : undefined}
 	{...tip(undefined, title)}
 	class="inline-flex items-center gap-2 border-0 bg-transparent p-0 text-left enabled:cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
 	onclick={() => onchange?.(!checked)}
@@ -34,5 +39,9 @@
 				: ''}"
 		></span>
 	</span>
-	<span>{label}</span>
+	{#if Icon}
+		<Icon size={20} stroke={2} class="shrink-0" aria-hidden="true" />
+	{:else}
+		<span>{label}</span>
+	{/if}
 </button>

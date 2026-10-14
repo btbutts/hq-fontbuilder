@@ -198,7 +198,7 @@
 		await consoleStore.refresh();
 	}
 
-	// The toolbar shows a short status, so that it never grows taller; the details are its tooltip.
+	// The title line shows a short status, so that it never grows taller; the details are its tooltip.
 	const familyName = $derived(family?.displayName ?? familyLabel);
 	const orderNames = $derived(order.map((label) => consoleStore.nameOf(label)));
 
@@ -236,8 +236,18 @@
 
 <PageHeader>
 	<div class="flex items-center justify-between gap-4">
-		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>coverage table</CtrlButton>
-		<ThemeToggle />
+		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>Coverage Table</CtrlButton>
+		<div class="flex items-center gap-4">
+			<ThemeToggle />
+			{#if snapshot !== null && group && family && order.length > 0}
+				<CtrlButton
+					function="nav.FORWARD"
+					onclick={() => goto(`/compose?${new URLSearchParams({ group: groupId })}`)}
+				>
+					Combined Result
+				</CtrlButton>
+			{/if}
+		</div>
 	</div>
 
 	{#if snapshot === null}
@@ -247,9 +257,59 @@
 			unknown family or group: {familyLabel} / {groupId}
 		</h1>
 	{:else}
-		<h1 class="mt-4 mb-1 text-[1.4rem] font-semibold">
-			{family.displayName} — {group.id}{group.atomic ? ' (atomic)' : ''}
-		</h1>
+		{@const words = family.displayName.split(/\s+/)}
+		{@const nameFirst = words[0]}
+		{@const nameLast = words.length > 1 ? words[words.length - 1] : ''}
+		{@const nameMiddle = words.slice(1, -1).join(' ')}
+		{@const categoryName = `— ${group.id}${group.atomic ? ' (atomic)' : ''}`}
+		<!--
+			The status stands right of the title, on the title's line, and the line never wraps, so
+			the circle never moves. When the line is too narrow, things give way in this order:
+
+			1. the status text: the status is a row that wraps inside a box one line tall, so its text
+			   drops into the hidden second line as a whole and only the circle stays;
+			2. the middle of the family name ("Nerd Font" of "FiraMono Nerd Font Mono") is cut from
+			   its end and ends in an ellipsis; the first and last words, the dash and the group
+			   name are never cut;
+			3. only then the first word, from its end.
+
+			Every shrinking part has a shrink factor, and an item with any shrink at all is
+			cut at the first pixel it is short of, so the parts that must not give way yet have
+			factor 0 or a near-zero one next to the part that is to go first (1000). The title
+			itself does not shrink; it is only capped so that the gap and the circle fit beside it.
+
+			The box is set in the title's font size (1.4rem) so that the circle is as tall as the
+			title's text is large: the icon is 1.2em, and the circle is 20 of its 24 units, so the
+			circle is 1em. The status text is set back to the 13.5px it has always had (0.9 of the
+			page's 15px).
+		-->
+		<div class="mt-4 mb-1 flex items-center gap-x-4">
+			<h1
+				class="m-0 flex max-w-[calc(100%-1rem-1.2em)] min-w-0 shrink-0 gap-x-[0.3em] text-[1.4rem] font-semibold whitespace-nowrap"
+				{...tip(undefined, `${family.displayName} ${categoryName}`)}
+			>
+				<span class="min-w-0 shrink-[0.001] truncate">{nameFirst}</span>
+				{#if nameMiddle}
+					<span class="min-w-[1.6em] shrink-[1000] truncate">{nameMiddle}</span>
+				{/if}
+				{#if nameLast}
+					<span class="shrink-0">{nameLast}</span>
+				{/if}
+				<span class="shrink-0">{categoryName}</span>
+			</h1>
+			<span
+				class="flex h-[1lh] min-w-[1.2em] shrink-[1000] flex-wrap items-center gap-x-1.5 gap-y-4 overflow-hidden text-[1.4rem] whitespace-nowrap {chooseError
+					? colors.textError
+					: colors.textAccent1}"
+				{...tip(undefined, statusDetails)}
+			>
+				<!-- each is the box's full height, so that the first line is centred in it whether or not a second one wraps -->
+				<span class="flex h-full items-center">
+					<IconHelpCircleFilled class="size-[1.2em] shrink-0" aria-hidden="true" />
+				</span>
+				<span class="flex h-full items-center text-[13.5px]">{statusText}</span>
+			</span>
+		</div>
 		<p class="mt-0 mb-0 max-w-5xl {colors.textSecondary}">
 			{group.label}; {group.total} code points; cell of base family
 			{base ? consoleStore.nameOf(base.family) : '(none configured)'}. Coverage shown for the family is that of its
@@ -266,49 +326,43 @@
 </PageHeader>
 
 {#if snapshot !== null && group && family}
-	<StickyBar>
-		<span class="mr-6 flex">
-			<Toggle
-				label="Use this Font Family for the {group.id} Group"
-				checked={position >= 0}
-				onchange={(enabled) => change(enabled ? 'add' : 'remove')}
-			/>
-		</span>
+	{#snippet useToggle()}
+		<Toggle
+			label="Use this Font Family for the {group.id} Group"
+			checked={position >= 0}
+			onchange={(enabled) => change(enabled ? 'add' : 'remove')}
+		/>
+	{/snippet}
+	{#snippet clearAll()}
 		{#if order.length > 0}
-			<CtrlButton
-				function="nav.FORWARD"
-				class="mr-6"
-				onclick={() => goto(`/compose?${new URLSearchParams({ group: groupId })}`)}
-			>
-				Combined Result
-			</CtrlButton>
 			<CtrlButton
 				surface="raised"
 				padding="px-2 py-0.5"
 				fontSize="text-[0.9em]"
-				class="mr-6"
 				tooltip="remove every font from the Inheritance Order of this glyph category (asks first)"
 				onclick={() => (confirmClear = true)}
 			>
 				Clear All Families
 			</CtrlButton>
 		{/if}
-		<span
-			class="inline-flex items-center gap-1 text-[0.9em] whitespace-nowrap {chooseError
-				? colors.textError
-				: colors.textAccent1}"
-			{...tip(undefined, statusDetails)}
-		>
-			{statusText}
-			<!-- the circle is 20 of the icon's 24 units: scaled so that it is as tall as the button beside it -->
-			<IconHelpCircleFilled
-				class="-my-[2.5px] size-[calc((1lh+6px)*1.2)] shrink-0"
-				aria-hidden="true"
-			/>
-		</span>
-		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
+	{/snippet}
+
+	<!-- too narrow for all of it: the switches go behind the menu button, Clear All stays -->
+	<StickyBar>
+		{#snippet full()}
+			<span class="mr-6 flex">{@render useToggle()}</span>
+			{@render clearAll()}
+			<span class="ml-auto flex items-center gap-x-6 pl-6">
+				<ViewToggles groupTotal={group.total} />
+			</span>
+		{/snippet}
+		{#snippet compact()}
+			{@render clearAll()}
+		{/snippet}
+		{#snippet menu()}
+			{@render useToggle()}
 			<ViewToggles groupTotal={group.total} />
-		</span>
+		{/snippet}
 	</StickyBar>
 
 <!-- All the styles scroll sideways together, so a column stays comparable across them. -->

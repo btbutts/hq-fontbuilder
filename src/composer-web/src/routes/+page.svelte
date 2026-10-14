@@ -34,27 +34,30 @@
 	}
 </script>
 
-<div class="flex flex-wrap items-start justify-between gap-x-8 gap-y-3">
-	<div class="min-w-0 flex-1 basis-[28rem]">
-		<h1 class="mb-1 text-[1.4rem] font-semibold">font-composer</h1>
-		<p class="mt-0 max-w-5xl {colors.textSecondary}">
-			Coverage by glyph group and family, measured on each family's reference style (the upright
-			cut nearest Regular). Click a cell to inspect the group's glyphs for that family and to add
-			the family to the group's inheritance order. Atomic groups count as sourced only at 100% and
-			come from one family. A ≠ marks a group on which the family's styles hold different glyphs.
-		</p>
-	</div>
-	<div class="flex shrink-0 flex-col items-end gap-3">
+<!--
+	The title and the controls share one line at every width: the controls are right aligned
+	and never wrap. The description is its own block below, so it may run under them when the
+	viewport is narrow and is not in their way when it is wide (it stops at max-w-5xl).
+-->
+<div class="mb-1 flex items-center justify-between gap-x-6">
+	<h1 class="m-0 text-[1.4rem] font-semibold">font-composer</h1>
+	<div class="flex shrink-0 items-center gap-4">
 		<ThemeToggle />
 		<CtrlButton
-			padding="px-3 py-1.5"
-			fontWeight="font-medium"
+			padding="px-2 py-0.5"
+			fontSize="text-[0.9em]"
 			onclick={() => (showStyleMapping = true)}
 		>
 			Style Mapping
 		</CtrlButton>
 	</div>
 </div>
+<p class="mt-0 max-w-5xl {colors.textSecondary}">
+	Coverage by glyph group and family, measured on each family's reference style (the upright
+	cut nearest Regular). Click a cell to inspect the group's glyphs for that family and to add
+	the family to the group's inheritance order. Atomic groups count as sourced only at 100% and
+	come from one family. A ≠ marks a group on which the family's styles hold different glyphs.
+</p>
 
 {#if snapshot?.configError}
 	<p class="mt-4 max-w-5xl rounded border px-3 py-2 {colors.errorBoxBorder} {colors.errorBoxBackground} {colors.textError}">
@@ -66,12 +69,21 @@
 {#if snapshot === null}
 	<p class="mt-4 {colors.textSecondary}">{consoleStore.error ?? 'loading…'}</p>
 {:else}
-	<table class="mt-4 border-collapse">
+	<!--
+		The table is the only thing that scrolls sideways (the title, description and controls
+		above it stay put). The group column is sticky, so the family columns pass under it; that
+		needs border-separate (collapsed borders stay behind with the scrolled cell), so each
+		cell draws its right and bottom borders, and the first column and the header row the
+		left and top ones. Its z-20 keeps a hovered cell (z-10, it grows) from covering it.
+		pb-2 leaves room for the shadow of a hovered cell in the last row.
+	-->
+	<div class="mt-4 overflow-x-auto pb-2">
+	<table class="border-separate border-spacing-0">
 		<thead>
 			<tr>
-				<th class="border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">group</th>
+				<th class="sticky left-0 z-20 border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">group</th>
 				{#each snapshot.families as family (family.label)}
-					<th class="border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
+					<th class="border-t border-r border-b px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
 						{family.displayName}{family.errors.length ? ' ⚠' : ''}
 					</th>
 				{/each}
@@ -80,14 +92,14 @@
 		<tbody>
 			{#each snapshot.groups as group (group.id)}
 				<tr>
-					<td class="border px-2 py-1 text-left font-mono whitespace-nowrap {colors.border}">
+					<td class="sticky left-0 z-20 border-r border-b border-l px-2 py-1 text-left font-mono whitespace-nowrap {colors.border} {colors.pageBackground}">
 						{group.id}{#if group.atomic}<span class="text-[0.8em] {colors.textAccent2}"> atomic</span>{/if}
 					</td>
 					{#each snapshot.families as family (family.label)}
 						{@const [present, total] = snapshot.coverage[family.label]?.[group.id] ?? [0, group.total]}
 						{@const position = (snapshot.choices[group.id] ?? []).indexOf(family.label)}
 						{@const uneven = snapshot.uneven[family.label]?.includes(group.id) ?? false}
-						<td class="border p-0 text-center whitespace-nowrap {colors.border}">
+						<td class="border-r border-b p-0 text-center whitespace-nowrap {colors.border}">
 							<a
 								href={groupHref(family.label, group.id)}
 								class="relative block px-2 py-1 no-underline transition-[box-shadow,background-color,transform] duration-150 ease-out hover:z-10 hover:scale-[1.03] focus-visible:z-10 focus-visible:scale-[1.03] motion-reduce:transition-none motion-reduce:hover:scale-100 {cellClasses(present, total, position >= 0)} {position >= 0 ? 'font-semibold' : ''}"
@@ -110,6 +122,7 @@
 			{/each}
 		</tbody>
 	</table>
+	</div>
 
 	<h2 class="mt-8 text-[1.1rem] font-semibold">Composition so far</h2>
 	<p class="mt-0 max-w-5xl {colors.textSecondary}">

@@ -23,6 +23,7 @@
 	import { unicodeNames } from '#lib/data/unicodeNames.svelte.js';
 	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE, type LayoutCell } from '#lib/glyph/glyphLayout.js';
 	import ViewToggles from '#lib/toggle/ViewToggles.svelte';
+	import { tip } from '#lib/tooltip/tooltip.js';
 	import { viewOptions } from '#lib/toggle/viewOptions.svelte.js';
 
 	const GLYPH_EM_PX = 64;
@@ -159,7 +160,7 @@
 
 <PageHeader>
 	<div class="flex items-center justify-between gap-4">
-		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>coverage table</CtrlButton>
+		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>Coverage Table</CtrlButton>
 		<ThemeToggle />
 	</div>
 
@@ -184,7 +185,7 @@
 			{/if}
 		</p>
 
-		<h2 class="mt-5 mb-1 text-[1rem] font-semibold">Font inheritance order</h2>
+		<h2 class="mt-5 mb-1 text-[1rem] font-semibold">Font Inheritance Order</h2>
 		{#if current.order.length === 0}
 			<p class="mt-0 mb-0 {colors.textError}">
 				No family is chosen for this group. Open a family from the coverage table to add it.
@@ -195,7 +196,17 @@
 			across rows (names are the widest column, the counts start after the longest name, the
 			buttons share their columns) without drawing a table.
 		-->
-		<ol class="m-0 grid w-fit list-none grid-cols-[repeat(7,auto)] gap-x-2 p-0">
+		<!--
+			The list and the "Add a Font Family" row share one box that is as wide as the list. The
+			row is `w-0 min-w-full`: it adds nothing to that width (so it cannot move the list's
+			columns) and is then exactly as wide as the list, whatever the names make it. Its
+			drop-down is pushed to the right end, which is the right edge of the REMOVE buttons;
+			it keeps its own width and gives way only if the list is narrower than the row.
+		-->
+		<div class="w-fit max-w-full">
+		<ol
+			class="m-0 grid w-fit max-w-full list-none grid-cols-[auto_auto_minmax(3em,auto)_auto_auto_auto_auto] gap-x-2 p-0"
+		>
 			{#each current.order as family, index (family)}
 				<li class="col-span-full grid grid-cols-subgrid items-center py-0.5">
 					<span
@@ -203,7 +214,9 @@
 						aria-hidden="true"
 					></span>
 					<span class="text-right {colors.textTertiary}">{index + 1}.</span>
-					<span class="font-medium">{consoleStore.nameOf(family)}</span>
+					<span class="truncate font-medium" {...tip(undefined, consoleStore.nameOf(family))}
+						>{consoleStore.nameOf(family)}</span
+					>
 					<span class="pl-4 text-[0.85em] whitespace-nowrap {colors.textTertiary}">
 						{current.contributions[family] ?? 0} glyph{current.contributions[family] === 1
 							? ''
@@ -224,10 +237,14 @@
 			{/each}
 		</ol>
 		{#if unusedFamilies.length > 0 && !(group.atomic && current.order.length > 0)}
-			<label class="mt-2 inline-block text-[0.9em]">
-				add a family at the end:
+			<label
+				class="mt-2 flex items-center gap-x-2 text-[0.9em] {current.order.length > 0
+					? 'w-0 min-w-full'
+					: ''}"
+			>
+				<span class="shrink-0 whitespace-nowrap">Add a Font Family:</span>
 				<Dropdown
-					class="ml-1"
+					class="ml-auto min-w-24 shrink"
 					surface="raised"
 					momentary
 					value=""
@@ -244,6 +261,7 @@
 				/>
 			</label>
 		{/if}
+		</div>
 		{#if actionError}
 			<p class="mt-2 mb-0 {colors.textError}">{actionError}</p>
 		{/if}
@@ -263,19 +281,44 @@
 </PageHeader>
 
 {#if snapshot !== null && group && current !== null}
+	{#snippet clippedStatus()}
+		{#if viewOptions.unfitted && clippedTotal > 0}
+			<span class="font-semibold {colors.textClipped}"
+				>{clippedTotal} glyph{clippedTotal === 1 ? ' is' : 's are'} cut off by the base cell
+				(red outline).</span
+			>
+		{/if}
+	{/snippet}
+
+	<!--
+		Too narrow for all of it: first the explanation goes (`reduced`); then the switches go
+		behind the menu button, and the cut-off count stays, right aligned, on up to two lines
+		of the toolbar's height.
+	-->
 	<StickyBar>
-		<span class="text-[0.9em] {colors.textSecondary}">
-			Glyphs are drawn from each family's reference style (the upright cut nearest Regular).
-			{#if viewOptions.unfitted && clippedTotal > 0}
-				<span class="font-semibold {colors.textClipped}"
-					>{clippedTotal} glyph{clippedTotal === 1 ? ' is' : 's are'} cut off by the base cell
-					(red outline).</span
-				>
-			{/if}
-		</span>
-		<span class="ml-auto flex flex-wrap items-center gap-x-6 gap-y-1 pl-6">
+		{#snippet full()}
+			<span class="text-[0.9em] {colors.textSecondary}">
+				Glyphs are drawn from each family's reference style (the upright cut nearest Regular).
+				{@render clippedStatus()}
+			</span>
+			<span class="ml-auto flex items-center gap-x-6 pl-6">
+				<ViewToggles groupTotal={group.total} />
+			</span>
+		{/snippet}
+		{#snippet reduced()}
+			<span class="text-[0.9em] {colors.textSecondary}">{@render clippedStatus()}</span>
+			<span class="ml-auto flex items-center gap-x-6 pl-6">
+				<ViewToggles groupTotal={group.total} />
+			</span>
+		{/snippet}
+		{#snippet compact()}
+			<span class="ml-auto line-clamp-2 min-w-0 text-right text-[0.9em] leading-none whitespace-normal">
+				{@render clippedStatus()}
+			</span>
+		{/snippet}
+		{#snippet menu()}
 			<ViewToggles groupTotal={group.total} />
-		</span>
+		{/snippet}
 	</StickyBar>
 
 	<div class="overflow-x-auto py-4">

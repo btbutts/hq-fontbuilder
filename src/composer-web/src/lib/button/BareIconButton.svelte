@@ -15,15 +15,21 @@
 		onclick: () => void;
 		/** px, the width and height of the icon */
 		size?: number;
+		/** for a button that opens a pop-up: whether it is open */
+		expanded?: boolean;
+		/** text colour classes (rest and hover), instead of `colors.bareIconButton` */
+		colorClasses?: string;
 	}
 
-	let { icon: Icon, label, onclick, size = 18 }: Props = $props();
+	let { icon: Icon, label, onclick, size = 18, expanded, colorClasses }: Props = $props();
 </script>
 
 <button
 	type="button"
-	class="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm p-0 focus-visible:outline-2 focus-visible:outline-offset-1 {colors.bareIconButton} {colors.focusOutline}"
+	class="inline-flex shrink-0 cursor-pointer items-center justify-center rounded-sm p-0 focus-visible:outline-2 focus-visible:outline-offset-1 {colorClasses ?? colors.bareIconButton} {colors.focusOutline}"
 	aria-label={label}
+	aria-haspopup={expanded === undefined ? undefined : 'true'}
+	aria-expanded={expanded}
 	{...tip(undefined, label)}
 	{onclick}
 >

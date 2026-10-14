@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { colors } from '../styles.svelte';
+	import { colors, floating } from '../styles.svelte';
 	import { TIP_BODY_ATTRIBUTE, TIP_TITLE_ATTRIBUTE, tipRuns } from './tooltip';
 
 	// The one tooltip of the page. Elements describe themselves with `tip()`; this finds
@@ -95,7 +95,8 @@
 	<div
 		bind:this={box}
 		role="tooltip"
-		class="pointer-events-none fixed z-50 max-w-80 rounded border px-3 py-2 text-[0.85rem] leading-snug {colors.border} {colors.bandBackground} {colors.textPrimary} {colors.floatingShadow}"
+		class="pointer-events-none fixed z-50 max-w-80 border px-3 py-2 text-[0.85rem] leading-snug {floating.radius} {colors.border} {colors.tooltipTint} {colors.textPrimary} {colors.floatingShadow}"
+		style={floating.style}
 		style:left="{left}px"
 		style:top="{top}px"
 	>

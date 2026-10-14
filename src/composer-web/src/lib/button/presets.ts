@@ -151,7 +151,7 @@ const definitions = {
 		icon: IconArrowLeft,
 		padding: 'px-2 py-0.5',
 		fontSize: 'text-[0.9em]',
-		placement: 'inline-flex items-center gap-1.5',
+		placement: 'inline-flex items-center gap-1.5 whitespace-nowrap',
 		tooltip: 'back to the table of font families and glyph categories'
 	},
 	/** "combined result →": on to the next page. Text comes from the use. */
@@ -161,7 +161,7 @@ const definitions = {
 		iconAfter: true,
 		padding: 'px-2 py-0.5',
 		fontSize: 'text-[0.9em]',
-		placement: 'inline-flex items-center gap-1.5',
+		placement: 'inline-flex items-center gap-1.5 whitespace-nowrap',
 		tooltip: 'the glyphs of this group as combined from the chosen families'
 	},
 	/** "show N more" under a long run of glyphs. Text comes from the use. */

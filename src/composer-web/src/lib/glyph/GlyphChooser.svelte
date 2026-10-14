@@ -3,7 +3,7 @@
 	import CtrlButton from '../button/CtrlButton.svelte';
 	import GlyphCell from './GlyphCell.svelte';
 	import { chooserGrid, type CellGeometry } from './glyphLayout';
-	import { colors } from '../styles.svelte';
+	import { colors, floating } from '../styles.svelte';
 	import { unicodeNames } from '../data/unicodeNames.svelte';
 
 	export interface Candidate {
@@ -108,7 +108,8 @@
 	bind:this={dialog}
 	role="dialog"
 	aria-label="Choose the glyph for U+{code}"
-	class="absolute z-30 max-w-[96vw] rounded border p-3 {colors.border} {colors.popoverBackground} {colors.popoverShadow}"
+	class="absolute z-30 max-w-[96vw] border p-3 {floating.radius} {colors.border} {colors.popoverTint} {colors.popoverShadow}"
+	style={floating.style}
 	style:left="{place.left}px"
 	style:top="{place.top}px"
 	style:width="{width}px"

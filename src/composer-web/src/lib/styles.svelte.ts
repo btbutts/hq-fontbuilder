@@ -56,6 +56,40 @@ class Theme {
 
 export const theme = new Theme();
 
+/** The blur at `floating.blur` = 1, in px: the setting is a fraction of this. */
+const MAX_BLUR_PX = 40;
+
+/**
+ * How the floating surfaces look: tooltips, the glyph chooser pop-up and the toolbar's menu
+ * (not the dialogs: Style mapping, Pick font styles, Clear all families). One place, one
+ * setting for all of them, which is why it is not in `colors`: that table holds the colour
+ * of each purpose, this holds what they share.
+ *
+ *     <div class="{floating.radius} {colors.popoverTint}" style={floating.style}>
+ *
+ * `transparency` 0..1 is how much of what is behind shows through the surface's own colour
+ * (`colors.tooltipTint`, `colors.popoverTint`); `blur` 0..1 is how much of that is blurred,
+ * as a fraction of 40px; `radius` is the corner radius, a Tailwind class. Change them at
+ * run time too (`floating.blur = 0.3`): the surfaces follow.
+ */
+class FloatingSurface {
+	transparency = $state(0.25);
+	blur = $state(0.25);
+	radius = 'rounded-lg';
+
+	/** Inline style that paints the tint at the chosen opacity and blurs what is behind. */
+	get style(): string {
+		const opacity = Math.round((1 - this.transparency) * 100);
+		const filter = `blur(${(this.blur * MAX_BLUR_PX).toFixed(1)}px)`;
+		return (
+			`background-color: color-mix(in srgb, var(--floating-tint) ${opacity}%, transparent);` +
+			` backdrop-filter: ${filter}; -webkit-backdrop-filter: ${filter};`
+		);
+	}
+}
+
+export const floating = new FloatingSurface();
+
 export const colors = {
 	// ---- page ---------------------------------------------------------------------------
 
@@ -87,6 +121,12 @@ export const colors = {
 	/** Shadow under that pop-up. */
 	popoverShadow:
 		'shadow-[0_20px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)] dark:shadow-[0_20px_25px_-5px_rgb(0_0_0/0.1),0_8px_10px_-6px_rgb(0_0_0/0.1)]',
+
+	/** The colours of the tooltip box and of the pop-ups (the glyph chooser, the toolbar's menu)
+	 *  before `floating` makes them see-through: not a background by itself, but the colour
+	 *  `floating.style` mixes with what is behind. */
+	tooltipTint: '[--floating-tint:#fafafa] dark:[--floating-tint:#121314]',
+	popoverTint: '[--floating-tint:#ffffff] dark:[--floating-tint:#121314]',
 
 	// ---- lines and controls -------------------------------------------------------------
 
@@ -135,6 +175,11 @@ export const colors = {
 	 */
 	bareIconButton:
 		'text-[#555555] hover:text-[#1c1c1e] dark:text-[#e6e6e6] dark:hover:text-[#ffffff]',
+
+	/** The toolbar's menu button: like `bareIconButton` at rest, the red of `textAccent2` under
+	 *  the pointer. */
+	menuIconButton:
+		'text-[#555555] hover:text-[#b02e2e] dark:text-[#e6e6e6] dark:hover:text-[#d63838]',
 
 	/** Outline drawn round a glyph cell that has keyboard focus. */
 	focusOutline: 'focus-visible:outline-[#1b4965] dark:focus-visible:outline-[#0c5f9a]',
@@ -229,10 +274,10 @@ export const colors = {
 
 	/** Cells of a family that holds every code point of the group (green / olive). */
 	glyphCellFull: {
-		rest: 'bg-[#d8f3dc] dark:bg-[#495915]',
-		selected: 'bg-[#b4e4be] dark:bg-[#5a6d1b]',
+		rest: 'bg-[#d8f3dc] dark:bg-[#416225]',
+		selected: 'bg-[#b4e4be] dark:bg-[#293D17]',
 		hover:
-			'hover:bg-[#b4e4be] hover:shadow-[0_0_0_4px_#b4e4be,0_4px_10px_rgb(0_0_0/0.25)] dark:hover:bg-[#5a6d1b] dark:hover:shadow-[0_0_0_4px_#5a6d1b,0_4px_10px_rgb(0_0_0/0.25)]',
+			'hover:bg-[#b4e4be] hover:shadow-[0_0_0_4px_#b4e4be,0_4px_10px_rgb(0_0_0/0.25)] dark:hover:bg-[#293D17] dark:hover:shadow-[0_0_0_4px_#293D17,0_4px_10px_rgb(0_0_0/0.25)]',
 		text: 'text-[#1f5a40] dark:text-[#ebebeb]'
 	},
 
