@@ -56,6 +56,19 @@ class Theme {
 
 export const theme = new Theme();
 
+/** The hand cursors of a draggable table header: `size` is their width and height in px. */
+class DragCursor {
+	size = $state(22);
+	tipRatio = $state(0.85);
+	light = '#000000';
+	dark = '#ffffff';
+
+	get stroke(): string {
+		return theme.dark ? this.dark : this.light;
+	}
+}
+export const dragCursor = new DragCursor();
+
 /** The blur at `floating.blur` = 1, in px: the setting is a fraction of this. */
 const MAX_BLUR_PX = 40;
 

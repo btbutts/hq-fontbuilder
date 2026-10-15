@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import '../app.css';
-	import { consoleStore } from '#lib/data/console.svelte.js';
-	import { colors } from '#lib/styles.svelte.js';
+	import { consoleStore } from '#lib/data/console.svelte.ts';
+	import { colors } from '#lib/styles.svelte.ts';
 	import Tooltip from '#lib/tooltip/Tooltip.svelte';
 
 	let { children } = $props();
