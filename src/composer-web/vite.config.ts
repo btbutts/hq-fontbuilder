@@ -13,7 +13,7 @@ const staticDir = path.resolve(
 	'../../font_composer/composer/web/static'
 );
 
-// `npm run dev` only: the Python console picks its own port and saves it in font_composer.toml
+// `bun --bun run dev` only: the Python console picks its own port and saves it in font_composer.toml
 // ([server] port); COMPOSER_PORT overrides it.
 function consolePort(): number {
 	const fromEnv = Number(process.env.COMPOSER_PORT);
@@ -95,9 +95,9 @@ export default defineConfig({
 		}
 	},
 	server: {
-		// `npm run dev` serves the SPA; the Python console must run alongside it
+		// `bun --bun run dev` serves the SPA; the Python console must run alongside it
 		// to answer the API and font-byte requests. It listens on both 127.0.0.1 and ::1,
-		// so "localhost" works whichever address Node resolves it to.
+		// so "localhost" works whichever address the runtime resolves it to.
 		proxy: {
 			'/api': consoleOrigin,
 			'/fonts': consoleOrigin

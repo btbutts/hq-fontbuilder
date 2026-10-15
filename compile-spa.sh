@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 # Compile the composer web console SPA.
 #
-# Installs the npm dependencies of src/composer-web/ and builds the SvelteKit app
+# Installs the dependencies of src/composer-web/ with Bun and builds the SvelteKit app
 # into font_composer/composer/web/static/, the directory the Python console serves.
 # Safe to re-run: the build wipes and rewrites that directory, so this script is how
 # you choose when to recompile.
 #
 # Used by setup-build-env.sh on a fresh clone and by .github/workflows/release.yml.
-# Runs on macOS and Linux; needs node and npm on PATH. Under CI (CI=true, which
-# GitHub Actions sets) the dependencies are installed with `npm ci`, exactly as
-# package-lock.json pins them; otherwise `npm install` is used, which may update it.
+# Runs on macOS and Linux; needs bun on PATH (Node.js is not needed: the build runs
+# on Bun's runtime). Under CI (CI=true, which GitHub Actions sets) the dependencies
+# are installed with `bun install --frozen-lockfile`, exactly as bun.lock pins them;
+# otherwise `bun install` is used, which may update it.
 #
 # Usage: compile-spa.sh [--named-chunks]
 #   --named-chunks  local testing only: prefix shared chunk filenames with their module
@@ -30,8 +31,8 @@ for arg in "$@"; do
     esac
 done
 
-if ! command -v npm > /dev/null 2>&1; then
-    echo "compile-spa.sh: npm not found; install Node.js (22 or later) and npm first" >&2
+if ! command -v bun > /dev/null 2>&1; then
+    echo "compile-spa.sh: bun not found; install Bun first (https://bun.sh)" >&2
     exit 1
 fi
 
@@ -45,8 +46,8 @@ fi
 
 cd -- "$(dirname -- "${BASH_SOURCE[0]}")/src/composer-web"
 if [ "${CI:-}" = "true" ]; then
-    npm ci
+    bun --bun install --frozen-lockfile
 else
-    npm install
+    bun --bun install
 fi
-npm run build
+bun --bun run build

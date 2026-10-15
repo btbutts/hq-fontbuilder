@@ -1,0 +1,24 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "bun",
+            "request": "launch",
+            "name": "Bun: Debug Current File",
+            "program": "${file}",
+            "cwd": "${workspaceFolder}",
+            "stopOnEntry": false,
+            "watchMode": false
+        },
+        {
+            "type": "bun",
+            "request": "launch",
+            "name": "Bun: Debug Dev Server",
+            "runtimeArgs": ["--bun"],
+            "program": "${workspaceFolder}/src/composer-web/node_modules/vite/bin/vite.js",
+            "args": ["dev"],
+            "cwd": "${workspaceFolder}/src/composer-web",
+            "stopOnEntry": false
+        }
+    ]
+}

@@ -56,7 +56,7 @@ and the Nerd Fonts builds of Fira Mono and Inconsolata, each in the plain and th
 
 ## _Quick start_
 
-Requires Python 3.12+ and node/npm. One script sets up everything on a fresh clone
+Requires Python 3.12+ and [Bun](https://bun.sh) (Node.js is not needed). One script sets up everything on a fresh clone
 (the Python virtualenv with `requirements.txt`, and the compiled web console):
 
 ```sh
@@ -148,7 +148,7 @@ In the console:
   digit). The page scrolls sideways when a row is wider than the window. The
   **Enable glyph wrapping** switch at the top right of the page gives one wrapping run
   instead (the choice is remembered by the browser). The layout code is in
-  `src/composer-web/src/lib/glyph/glyphLayout.ts` (pure functions, `npm test`) and
+  `src/composer-web/src/lib/glyph/glyphLayout.ts` (pure functions, `bun run test`) and
   `glyph/GlyphGrid.svelte`.
 * The **checkbox on the group page** (`use this family for this group`) adds the family
   to the group's **inheritance order**, at the end; unchecking removes it. Choose the
@@ -354,14 +354,18 @@ read as their default instance for now; the build will instantiate them.)
 ### _Web console source_
 
 The console served by `compose` is a SvelteKit + TypeScript + TailwindCSS single-page
-app whose source lives in `src/composer-web/` (requires Node/npm). Compile it with:
+app whose source lives in `src/composer-web/` (requires [Bun](https://bun.sh); Node.js is not needed). Compile it with:
 
 ```sh
-./compile-spa.sh     # npm install + build, into font_composer/composer/web/static/
+./compile-spa.sh     # bun install + build, into font_composer/composer/web/static/
 ```
 
-or, from inside `src/composer-web/`, `npm run build` directly (`npm run check` runs
-svelte-check, TypeScript strict; `npm test` runs the glyph layout unit tests).
+or, from inside `src/composer-web/`, `bun --bun run build` directly (`bun --bun run check`
+runs svelte-check, TypeScript strict; `bun --bun run test` runs the unit tests). `--bun`
+makes vite, svelte-kit and svelte-check run on Bun's runtime instead of Node.js;
+`src/composer-web/bunfig.toml` turns it on for every `bun run`, so leaving it off is safe.
+The lockfile is `bun.lock`; `bun install` updates it, `bun install --frozen-lockfile` (what
+CI uses) fails instead.
 
 **Layout of `src/composer-web/src/`.** `routes/` holds the three pages (the coverage table,
 a family's glyphs of one group, the combined result). `lib/` holds the reusable parts,
@@ -381,7 +385,7 @@ one folder per kind:
 
 **Python owns the webserver.** `python -m font_composer compose` is the only process
 you run: it watches the fonts directory, serves the JSON API and font files, and hosts
-the compiled SPA — no npm/vite process is needed at runtime. The SPA must simply have
+the compiled SPA — no Bun/vite process is needed at runtime. The SPA must simply have
 been compiled once on this checkout (and again after any web source edit); until it
 has, page requests get a 503 explaining how to compile.
 
@@ -390,7 +394,7 @@ is **not committed** — it only exists in build contexts (a development checkou
 the release workflow bot, which compiles the SPA and tarballs it into the release).
 The build wipes and rewrites that directory, so you choose when to recompile.
 
-For frontend development only, `npm run dev` gives Vite's live-reload dev server; it
+For frontend development only, `bun --bun run dev` gives Vite's live-reload dev server; it
 proxies `/api` and `/fonts` to the Python console on `localhost`, which must run
 alongside it. The port is read from `font_composer.toml` (`[server] port`, saved by the
 console) or from the `COMPOSER_PORT` environment variable. This is optional — plain `./compile-spa.sh` plus the Python console is

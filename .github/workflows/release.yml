@@ -52,10 +52,10 @@ jobs:
         with:
           python-version: '3.12'   # the oldest version the tool is tested with
 
-      - name: Set up Node
-        uses: actions/setup-node@v4.2.0
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6   # v2.2.0
         with:
-          node-version: '22'
+          bun-version: '1.4.3'   # the version bun.lock was written with
 
       - name: Check the tag
         run: |
@@ -108,8 +108,8 @@ jobs:
           .fontbuilder.venv/bin/pylint font_composer tests
           .fontbuilder.venv/bin/pyright
           cd src/composer-web
-          npm run check
-          npm test
+          bun --bun run check
+          bun --bun run test
 
       - name: Build the tarball
         run: |
@@ -197,7 +197,7 @@ jobs:
             echo
             echo "    sha256sum -c ${NAME}.tar.gz.sha256"
             echo
-            echo "Needs Python 3.12 or later; node/npm only when changing the web console"
+            echo "Needs Python 3.12 or later; Bun only when changing the web console"
             echo "source (the tarball already holds the compiled SPA)."
             echo
             echo "Do not use GitHub's automatic \"Source code\" archives of this tag: they hold"

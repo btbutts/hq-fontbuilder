@@ -16,7 +16,7 @@
         },
         {
             "label": "Compile web console SPA",
-            "detail": "npm install + npm run build of src/composer-web into font_composer/composer/web/static/. Run this after editing the web console source.",
+            "detail": "bun install + bun run build of src/composer-web into font_composer/composer/web/static/. Run this after editing the web console source.",
             "type": "shell",
             "command": "./compile-spa.sh",
             "options": {

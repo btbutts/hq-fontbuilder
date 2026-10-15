@@ -4,11 +4,11 @@
 #   1. Create the virtualenv .fontbuilder.venv/ (unless it already exists) and
 #      install requirements.txt into it.
 #   2. If the compiled web console is missing (fresh clone), run compile-spa.sh
-#      to install the npm dependencies and build the SPA.
+#      to install the dependencies with Bun and build the SPA.
 #
 # Both steps are skipped when already done, so running this script again is cheap
 # and safe (that is what the VS Code folder-open task relies on). Runs on macOS
-# and Linux; needs python3, and node/npm for step 2.
+# and Linux; needs python3, and bun for step 2.
 
 set -euo pipefail
 

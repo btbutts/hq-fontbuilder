@@ -1,0 +1,4 @@
+# Run package scripts and the tools they start (vite, svelte-kit, svelte-check) on Bun
+# even when `--bun` is left off the command line.
+[run]
+bun = true

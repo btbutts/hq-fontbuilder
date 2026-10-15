@@ -2,6 +2,8 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
+**/.DS_Store
+.DS_Store
 # The user's fonts and the console's configuration (family choices, saved port) are
 # local data and never committed. fonts/ itself is tracked through .gitkeep so a
 # checkout, and the release tarball, has the (empty) directory the console watches.

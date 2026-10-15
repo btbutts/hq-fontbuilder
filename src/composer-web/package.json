@@ -11,9 +11,10 @@
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",
-    "prepare": "svelte-kit sync",
-    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "node --test src/lib/glyph/glyphLayout.test.ts src/lib/table/columnOrder.test.ts"
+    "sync": "svelte-kit sync",
+    "prepare": "bun --bun run sync",
+    "check": "bun --bun run sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "bun test ./src/lib/glyph/glyphLayout.test.ts ./src/lib/table/columnOrder.test.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^4.0.0",
@@ -28,8 +29,5 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^6.0.3",
     "vite": "^8.3.4"
-  },
-  "allowScripts": {
-    "fsevents": true
   }
 }
