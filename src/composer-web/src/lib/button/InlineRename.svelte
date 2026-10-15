@@ -27,9 +27,11 @@
 		custom: string | null;
 		onsave: (name: string) => Promise<string | null>;
 		onreset: () => Promise<string | null>;
+		/** told whenever the field opens or closes (and `false` when this goes away open) */
+		onediting?: (editing: boolean) => void;
 	}
 
-	let { original, custom, onsave, onreset }: Props = $props();
+	let { original, custom, onsave, onreset, onediting }: Props = $props();
 
 	const shown = $derived(custom ?? original);
 
@@ -39,6 +41,11 @@
 	let busy = $state(false);
 	let field = $state<HTMLInputElement | null>(null);
 	const problemId = `rename-problem-${Math.random().toString(36).slice(2)}`;
+
+	$effect(() => {
+		onediting?.(editing);
+		return () => onediting?.(false);
+	});
 
 	// the field takes the keyboard and its text is selected, as soon as it is there
 	$effect(() => {
@@ -86,53 +93,54 @@
 	}
 </script>
 
-<div class="min-w-0">
-	<!-- the field is taller than a line of text: it takes the room of the cell's own padding, so
-	     the row does not grow when it opens -->
-	<div class="flex min-h-[1lh] items-center justify-between gap-3">
-		{#if editing}
-			<!-- a refusal is written inside the field, at its right end -->
-			<span class="relative -my-[3px] flex h-[calc(1lh+6px)] min-w-0 flex-1">
-				<input
-					bind:this={field}
-					bind:value={draft}
-					{onkeydown}
-					oninput={() => (problem = null)}
-					type="text"
-					class="h-full min-w-0 flex-1 rounded border px-2 {colors.border} {colors.inputBackground} {colors.textPrimary} {problem !== null ? 'pr-36' : ''}"
-					aria-label="Name of the {original} style"
-					aria-invalid={problem !== null}
-					aria-describedby={problem !== null ? problemId : undefined}
-					autocomplete="off"
-					spellcheck="false"
-				/>
-				{#if problem !== null}
-					<span
-						id={problemId}
-						role="alert"
-						class="pointer-events-none absolute top-1/2 right-2 max-w-[60%] -translate-y-1/2 truncate text-[0.8em] font-normal {colors.textError}"
-					>
-						{problem}
-					</span>
-				{/if}
+<!-- the root fills its cell edge to edge (the cell has no padding of its own); editing turns the
+     whole of it into the field, with the buttons inside it at the right -->
+<svelte:element
+	this={editing ? 'label' : 'div'}
+	class="flex min-h-[1lh] min-w-0 items-center justify-between gap-3 px-3 py-1 {editing ? colors.inputBackground : ''}"
+>
+	{#if editing}
+		<input
+			data-no-drag
+			bind:this={field}
+			bind:value={draft}
+			{onkeydown}
+			oninput={() => (problem = null)}
+			type="text"
+			class="m-0 min-w-0 flex-1 border-0 bg-transparent p-0 outline-none {colors.textPrimary}"
+			aria-label="Name of the {original} style"
+			aria-invalid={problem !== null}
+			aria-describedby={problem !== null ? problemId : undefined}
+			autocomplete="off"
+			spellcheck="false"
+		/>
+		{#if problem !== null}
+			<span
+				id={problemId}
+				role="alert"
+				class="max-w-[50%] shrink-0 truncate text-[0.8em] font-normal {colors.textError}"
+			>
+				{problem}
 			</span>
-			<span class="flex shrink-0 items-center gap-2">
-				<BareIconButton
-					icon={IconArrowBack}
-					label={custom === null ? 'Discard the change' : `Use the default name, ${original}`}
-					onclick={() => void back()}
-				/>
-				<BareIconButton icon={IconDeviceFloppy} label="Save the name" onclick={() => void save()} />
-			</span>
-		{:else}
-			<span class="min-w-0 truncate">{shown}</span>
+		{/if}
+		<span data-no-drag class="flex shrink-0 items-center gap-2">
+			<BareIconButton
+				icon={IconArrowBack}
+				label={custom === null ? 'Discard the Change' : `Use the Default Name, ${original}`}
+				onclick={() => void back()}
+			/>
+			<BareIconButton icon={IconDeviceFloppy} label="Save the Name" onclick={() => void save()} />
+		</span>
+	{:else}
+		<span class="min-w-0 truncate">{shown}</span>
+		<span data-no-drag class="-m-1.5 flex cursor-pointer p-1.5">
 			<BareIconButton
 				icon={custom === null ? IconPencil : IconPencilCheck}
 				label={custom === null
-					? 'Give this style another name'
-					: `Called ${custom} instead of ${original}: click to change`}
+					? 'Change Font Style Name'
+					: `Called ${custom} instead of ${original}\nClick to Change`}
 				onclick={begin}
 			/>
-		{/if}
-	</div>
-</div>
+		</span>
+	{/if}
+</svelte:element>

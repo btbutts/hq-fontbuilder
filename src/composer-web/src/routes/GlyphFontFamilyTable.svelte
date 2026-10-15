@@ -53,11 +53,13 @@
 		rows={snapshot.groups}
 		label={(column) => column.family.displayName}
 		onreorder={(ids) => order.set(ids)}
+		bind:locked={order.locked}
 		aria-label="Glyph coverage by group and font family"
 	>
-		{#snippet fixedHeader()}
-			<div class="border px-2 py-1 text-center font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
+		{#snippet fixedHeader(lockButton)}
+			<div class="flex items-center justify-between gap-3 border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
 				Group
+				{@render lockButton()}
 			</div>
 		{/snippet}
 		{#snippet fixedCell(group)}

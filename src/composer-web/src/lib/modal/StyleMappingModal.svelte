@@ -6,6 +6,8 @@
 	import { postStyle, postStyleName, type StyleFileInfo } from '../data/api';
 	import { consoleStore } from '../data/console.svelte';
 	import Dropdown from '../dropdown/Dropdown.svelte';
+	import { ColumnOrder } from '../table/columnOrder.svelte.ts';
+	import ReorderableColumns from '../table/ReorderableColumns.svelte';
 	import { lockScroll } from './scrollLock';
 	import StyleTypesModal from './StyleTypesModal.svelte';
 	import { colors } from '../styles.svelte';
@@ -22,6 +24,13 @@
 
 	let error = $state<string | null>(null);
 	let editingStyles = $state(false);
+
+	const order = new ColumnOrder('fc-column-order:style-mapping', () => map?.outputStyles ?? []);
+	const columns = $derived(order.ids.map((id) => ({ id })));
+	const rows = $derived(families.map((id) => ({ id })));
+
+	let renaming = $state<Record<string, boolean>>({});
+	const anyRenaming = $derived(Object.values(renaming).some(Boolean));
 
 	$effect(() => lockScroll());
 
@@ -106,73 +115,81 @@
 				No family is used by any glyph group yet. Choose families in the coverage table first.
 			</p>
 		{:else}
-			<!-- the table scrolls sideways when the styles do not fit; the dialog never grows -->
-			<div class="mt-4 overflow-x-auto pb-1">
-			<table class="border-separate border-spacing-0 [--select-width:28rem]">
-				<thead>
-					<tr>
-						<th
-							class="sticky left-0 z-10 border px-3 py-1 text-left font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}"
+			{@const m = map}
+			<div class="mt-4 [--select-width:28rem]">
+				<ReorderableColumns
+					{columns}
+					{rows}
+					dragDisabled={anyRenaming}
+					label={(column) => m.names[column.id] ?? column.id}
+					onreorder={(ids) => order.set(ids)}
+					bind:locked={order.locked}
+					columnBackground={colors.modalBackground}
+					aria-label="Font sources by font family and font style"
+				>
+					{#snippet fixedHeader(lockButton)}
+						<div
+							class="border px-3 py-1 text-left font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}"
 						>
 							<div class="flex items-center justify-between gap-3">
 								Font Family
-								<BareIconButton
+								<span class="flex items-center gap-2">
+									<BareIconButton
 										icon={IconEditBulk}
 										label="choose which font styles are considered"
 										onclick={() => (editingStyles = true)}
 									/>
+									{@render lockButton()}
+								</span>
 							</div>
-						</th>
-						{#each map.outputStyles as style (style)}
-							<th
-								class="border-t border-r border-b px-3 py-1 text-left font-semibold {colors.border} {colors.quietControlBackground}"
+						</div>
+					{/snippet}
+					{#snippet fixedCell(row)}
+						<div
+							class="border-r border-b border-l px-3 py-1 align-top font-semibold whitespace-nowrap {colors.border} {colors.modalBackground}"
+						>
+							{consoleStore.nameOf(row.id)}
+						</div>
+					{/snippet}
+					{#snippet header(column, handle)}
+						<div
+							use:handle
+							class="fc-col-handle border-t border-r border-b text-left font-semibold {colors.border} {colors.quietControlBackground}"
+						>
+							<InlineRename
+								original={column.id}
+								custom={m.names[column.id] ?? null}
+								onsave={(name) => rename(column.id, name)}
+								onreset={() => rename(column.id, null)}
+								onediting={(on) => (renaming[column.id] = on)}
+							/>
+						</div>
+					{/snippet}
+					{#snippet cell(column, row)}
+						{@const entry = m.entries[column.id]?.[row.id]}
+						<div class="border-r border-b px-3 py-1 align-top {colors.border}">
+							<Dropdown
+								class="w-(--select-width)"
+								value={entry?.overridden ? (entry.file ?? '') : ''}
+								options={[
+									{ value: '', label: automaticLabel(row.id, column.id) },
+									...(m.families[row.id] ?? []).map((file) => ({
+										value: file.file,
+										label: describe(file)
+									}))
+								]}
+								onchange={(file) => choose(column.id, row.id, file)}
+							/>
+							<div
+								class="mt-0.5 w-(--select-width) text-[0.8em] {entry?.file
+									? colors.textTertiary
+									: colors.textError}"
 							>
-								<InlineRename
-									original={style}
-									custom={map.names[style] ?? null}
-									onsave={(name) => rename(style, name)}
-									onreset={() => rename(style, null)}
-								/>
-							</th>
-						{/each}
-					</tr>
-				</thead>
-				<tbody>
-					{#each families as family (family)}
-						<tr>
-							<td
-								class="sticky left-0 z-10 border-r border-b border-l px-3 py-1 align-top font-semibold whitespace-nowrap {colors.border} {colors.modalBackground}"
-							>
-								{consoleStore.nameOf(family)}
-							</td>
-							{#each map.outputStyles as style (style)}
-								{@const entry = map.entries[style]?.[family]}
-								<td class="border-r border-b px-3 py-1 align-top {colors.border}">
-									<Dropdown
-										class="w-(--select-width)"
-										value={entry?.overridden ? (entry.file ?? '') : ''}
-										options={[
-											{ value: '', label: automaticLabel(family, style) },
-											...(map.families[family] ?? []).map((file) => ({
-												value: file.file,
-												label: describe(file)
-											}))
-										]}
-										onchange={(file) => choose(style, family, file)}
-									/>
-									<div
-										class="mt-0.5 w-(--select-width) text-[0.8em] {entry?.file
-											? colors.textTertiary
-											: colors.textError}"
-									>
-										{entry?.reason ?? ''}
-									</div>
-								</td>
-							{/each}
-						</tr>
-					{/each}
-				</tbody>
-			</table>
+								{entry?.reason ?? ''}
+							</div>
+						</div>
+					{/snippet}
+				</ReorderableColumns>
 			</div>
 		{/if}
 	</div>

@@ -69,6 +69,12 @@ class DragCursor {
 }
 export const dragCursor = new DragCursor();
 
+/** The copy of a column that follows the pointer while it is dragged: 0 (gone) to 1 (solid). */
+class DragColumnGhost {
+	opacity = $state(0.75);
+}
+export const dragColumnGhost = new DragColumnGhost();
+
 /** The blur at `floating.blur` = 1, in px: the setting is a fraction of this. */
 const MAX_BLUR_PX = 40;
 

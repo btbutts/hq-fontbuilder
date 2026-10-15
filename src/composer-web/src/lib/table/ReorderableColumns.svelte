@@ -1,14 +1,18 @@
 <script lang="ts" generics="C extends { id: string }, R extends { id: string }">
 	import type { Snippet } from 'svelte';
 	import { flip } from 'svelte/animate';
+	import type { Action } from 'svelte/action';
 	import {
 		dragHandle,
 		dragHandleZone,
 		TRIGGERS,
 		type DndEvent
 	} from 'svelte-dnd-action';
+	import IconLock from '@tabler/icons-svelte/icons/lock';
+	import IconLockOpen2 from '@tabler/icons-svelte/icons/lock-open-2';
+	import BareIconButton from '../button/BareIconButton.svelte';
 	import { publishDragCursors } from '../cursor/dragCursors.ts';
-	import { dragCursor } from '../styles.svelte.ts';
+	import { dragCursor, dragColumnGhost } from '../styles.svelte.ts';
 	import { insertionIndex, moveTo } from './columnOrder.ts';
 
 	interface Props {
@@ -21,9 +25,17 @@
 		onreorder: (ids: string[]) => void;
 		/** the table as a whole, for assistive technology */
 		'aria-label': string;
-		fixedHeader: Snippet;
+		/** no column can be picked up (a header cell is being edited, say) */
+		dragDisabled?: boolean;
+		/** the user's lock: columns cannot be dragged (bind it to remember it) */
+		locked?: boolean;
+		/** background classes of every column (cells under the header have none of their own) */
+		columnBackground?: string;
+		/** receives the lock button, to render wherever it belongs in the header cell */
+		fixedHeader: Snippet<[Snippet]>;
 		fixedCell: Snippet<[R]>;
-		header: Snippet<[C, typeof dragHandle]>;
+		/** put `use:handle` on the header cell; anything inside it marked `data-no-drag` is not part of the handle */
+		header: Snippet<[C, Action<HTMLElement, void>]>;
 		cell: Snippet<[C, R]>;
 	}
 
@@ -33,11 +45,18 @@
 		label,
 		onreorder,
 		'aria-label': ariaLabel,
+		dragDisabled = false,
+		locked = $bindable(false),
+		columnBackground = '',
 		fixedHeader,
 		fixedCell,
 		header,
 		cell
 	}: Props = $props();
+
+	// one zone type per table: two tables on screen (a dialog over the page) must not trade columns
+	const instanceId = $props.id();
+	const zoneType = `fc-column-${instanceId}`;
 
 	const FLIP_MS = 250;
 	const reduceMotion =
@@ -50,7 +69,40 @@
 	let scroller = $state<HTMLElement>();
 	let zone = $state<HTMLElement>();
 
+	// The library's handle gets only the events that may start a drag. Blocking the others
+	// with stopPropagation would also starve Svelte's delegated handlers (the rename field's
+	// Enter and Escape), so they are forwarded to a stand-in element instead. The disabled flag
+	// of the library is a module-level store shared by every table, so the gate is here too.
+	const handle: Action<HTMLElement, void> = (node) => {
+		const standIn = document.createElement('div');
+		const inner = dragHandle(standIn);
+		node.tabIndex = 0;
+		node.setAttribute('role', 'button');
+
+		const forward = (event: Event) => {
+			const target = event.target;
+			if (dragDisabled || locked || (target instanceof Element && target.closest('[data-no-drag]'))) return;
+			if (event instanceof KeyboardEvent) {
+				standIn.dispatchEvent(new KeyboardEvent('keydown', { key: event.key }));
+			} else {
+				event.preventDefault();
+				standIn.dispatchEvent(new Event(event.type, { cancelable: true }));
+			}
+		};
+		const events = ['mousedown', 'touchstart', 'keydown'] as const;
+		for (const name of events) node.addEventListener(name, forward);
+		return {
+			destroy() {
+				for (const name of events) node.removeEventListener(name, forward);
+				inner.destroy?.();
+			}
+		};
+	};
+
 	$effect(() => publishDragCursors(dragCursor.stroke, dragCursor.size, dragCursor.tipRatio));
+	$effect(() => {
+		document.documentElement.style.setProperty('--col-drag-opacity', String(dragColumnGhost.opacity));
+	});
 
 	// for a drop outside the zone: the other columns' centres and the last pointer x, both
 	// within the scrolling box
@@ -111,10 +163,24 @@
 	$effect(() => endDrag);
 </script>
 
+{#snippet lockButton()}
+	<BareIconButton
+		icon={locked ? IconLock : IconLockOpen2}
+		label={locked ? 'Unlock Columns' : 'Lock Columns'}
+		onclick={() => (locked = !locked)}
+	/>
+{/snippet}
+
 <div bind:this={scroller} class="fc-col-scroller overflow-x-auto overflow-y-hidden pb-2">
-	<div class="fc-col-grid" style:grid-template-rows="repeat({rows.length + 1}, auto)" role="group" aria-label={ariaLabel}>
+	<div
+		class="fc-col-grid"
+		style:grid-template-rows="repeat({rows.length + 1}, auto)"
+		role="group"
+		aria-label={ariaLabel}
+		data-drag-disabled={dragDisabled || locked || undefined}
+	>
 		<div class="fc-col-fixed">
-			{@render fixedHeader()}
+			{@render fixedHeader(lockButton)}
 			{#each rows as row (row.id)}
 				{@render fixedCell(row)}
 			{/each}
@@ -125,7 +191,7 @@
 			use:dragHandleZone={{
 				items: shown,
 				flipDurationMs: flipMs,
-				type: 'fc-column',
+				type: zoneType,
 				useCursorForDetection: true,
 				morphDisabled: true,
 				dropTargetStyle: {}
@@ -135,13 +201,13 @@
 		>
 			{#each shown as column (column.id)}
 				<div
-					class="fc-col"
+					class="fc-col {columnBackground}"
 					data-column-id={column.id}
 					role="group"
 					aria-label={label(column)}
 					animate:flip={{ duration: flipMs }}
 				>
-					{@render header(column, dragHandle)}
+					{@render header(column, handle)}
 					{#each rows as row (row.id)}
 						{@render cell(column, row)}
 					{/each}
@@ -189,14 +255,17 @@
 	}
 
 	/* the library writes inline cursors; only !important beats them */
-	:global(.fc-col-handle) {
+	.fc-col-grid:not([data-drag-disabled]) :global(.fc-col-handle) {
 		cursor: var(--col-cursor-move, grab) !important;
 		touch-action: none;
 		user-select: none;
 	}
+	.fc-col-grid[data-drag-disabled] :global(.fc-col-handle) {
+		cursor: default !important;
+	}
 
 	:global(#dnd-action-dragged-el) {
-		opacity: 0.55 !important;
+		opacity: var(--col-drag-opacity, 0.55) !important;
 		box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
 		outline: none;
 	}
