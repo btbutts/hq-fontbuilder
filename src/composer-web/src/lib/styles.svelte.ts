@@ -274,10 +274,10 @@ export const colors = {
 
 	/** Cells of a family that holds every code point of the group (green / olive). */
 	glyphCellFull: {
-		rest: 'bg-[#d8f3dc] dark:bg-[#416225]',
-		selected: 'bg-[#b4e4be] dark:bg-[#293D17]',
+		rest: 'bg-[#d8f3dc] dark:bg-[#643C96]',
+		selected: 'bg-[#b4e4be] dark:bg-[#503078]',
 		hover:
-			'hover:bg-[#b4e4be] hover:shadow-[0_0_0_4px_#b4e4be,0_4px_10px_rgb(0_0_0/0.25)] dark:hover:bg-[#293D17] dark:hover:shadow-[0_0_0_4px_#293D17,0_4px_10px_rgb(0_0_0/0.25)]',
+			'hover:bg-[#b4e4be] hover:shadow-[0_0_0_4px_#b4e4be,0_4px_10px_rgb(0_0_0/0.25)] dark:hover:bg-[#503078] dark:hover:shadow-[0_0_0_4px_#503078,0_4px_10px_rgb(0_0_0/0.25)]',
 		text: 'text-[#1f5a40] dark:text-[#ebebeb]'
 	},
 

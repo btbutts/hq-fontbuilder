@@ -10,10 +10,9 @@
 
 	const snapshot = $derived(consoleStore.state);
 
-	// A coverage cell has three tones (all glyphs, some, none) and two states: at rest, and
-	// "marked" (the family is in the group's inheritance order). The pointer gives a cell
-	// its marked colour and grows it over its neighbours. The colours are the glyphCell*
-	// entries of `colors`.
+	// A font cell has three tones (all glyphs, partial, none) and two states: at-rest, and
+	// "selected" (meaning it is in the glyph category inheritance order). Hovering also
+	// renders its selected color and slightly expands it over its neighbours.
 	function cellClasses(present: number, total: number, marked: boolean): string {
 		const tone =
 			present === 0
@@ -35,9 +34,9 @@
 </script>
 
 <!--
-	The title and the controls share one line at every width: the controls are right aligned
-	and never wrap. The description is its own block below, so it may run under them when the
-	viewport is narrow and is not in their way when it is wide (it stops at max-w-5xl).
+	The title and the controls remain locked to one line, regardless of viewport width and
+	they are not permitted to wrap. The description is its own element below, so it can run
+	span underneath them when the viewport width is narrowed.
 -->
 <div class="mb-1 flex items-center justify-between gap-x-6">
 	<h1 class="m-0 text-[1.4rem] font-semibold">font-composer</h1>
@@ -70,18 +69,15 @@
 	<p class="mt-4 {colors.textSecondary}">{consoleStore.error ?? 'loading…'}</p>
 {:else}
 	<!--
-		The table is the only thing that scrolls sideways (the title, description and controls
-		above it stay put). The group column is sticky, so the family columns pass under it; that
-		needs border-separate (collapsed borders stay behind with the scrolled cell), so each
-		cell draws its right and bottom borders, and the first column and the header row the
-		left and top ones. Its z-20 keeps a hovered cell (z-10, it grows) from covering it.
-		pb-2 leaves room for the shadow of a hovered cell in the last row.
+		Only the table should scroll sideways. The title, description and controls above it
+		remain locked in the viewport. The Group column is sticky, but the font family columns
+		scroll underneath it.
 	-->
 	<div class="mt-4 overflow-x-auto pb-2">
 	<table class="border-separate border-spacing-0">
 		<thead>
 			<tr>
-				<th class="sticky left-0 z-20 border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">group</th>
+				<th class="sticky left-0 z-20 border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">Group</th>
 				{#each snapshot.families as family (family.label)}
 					<th class="border-t border-r border-b px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
 						{family.displayName}{family.errors.length ? ' ⚠' : ''}
