@@ -1,5 +1,7 @@
 <script lang="ts">
+	import IconEqualNot from '@tabler/icons-svelte/icons/equal-not';
 	import CtrlButton from '#lib/button/CtrlButton.svelte';
+	import PeekButton from '#lib/button/PeekButton.svelte';
 	import { consoleStore } from '#lib/data/console.svelte.ts';
 	import StyleMappingModal from '#lib/modal/StyleMappingModal.svelte';
 	import { colors } from '#lib/styles.svelte.ts';
@@ -8,6 +10,7 @@
 	import GlyphFontFamilyTable from './GlyphFontFamilyTable.svelte';
 
 	let showStyleMapping = $state(false);
+	let notesOpen = $state(false);
 
 	const snapshot = $derived(consoleStore.state);
 
@@ -34,12 +37,31 @@
 		</CtrlButton>
 	</div>
 </div>
-<p class="mt-0 max-w-5xl {colors.textSecondary}">
-	Coverage by glyph group and family, measured on each family's reference style (the upright
-	cut nearest Regular). Click a cell to inspect the group's glyphs for that family and to add
-	the family to the group's inheritance order. Atomic groups count as sourced only at 100% and
-	come from one family. A ≠ marks a group on which the family's styles hold different glyphs.
-</p>
+<div class="{colors.textSecondary}">
+	<p class="mt-0 max-w-5xl pb-1">
+		<PeekButton bind:open={notesOpen} controls="table-notes">
+			The table below shows the composition of each Glyph Category for the respective Font Families.
+		</PeekButton>
+	</p>
+	<div
+		id="table-notes"
+		class="grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none
+			{notesOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'}"
+		inert={!notesOpen}
+	>
+		<ul class="min-h-0 list-disc list-outside space-x-2 overflow-hidden pl-9">
+			<li>
+				Click a cell to inspect the Glyph Category for that Font Family and to add the family to the
+				group's inheritance order.
+			</li>
+			<li>Atomic Glyph Categories are counted as sourced only at 100% coverage and come from one Font Family.</li>
+			<li>
+				<span>A <IconEqualNot size="1em" class="inline-block align-[-0.15em]" /> signifies a </span>
+				<span>Glyph Category of the respective Font Family's style(s) hold differing glyphs.</span>
+			</li>
+		</ul>
+	</div>
+</div>
 
 {#if snapshot?.configError}
 	<p class="mt-4 max-w-5xl rounded border px-3 py-2 {colors.errorBoxBorder} {colors.errorBoxBackground} {colors.textError}">
@@ -54,7 +76,7 @@
 	<GlyphFontFamilyTable {snapshot} />
 
 	<h2 class="mt-8 text-[1.1rem] font-semibold">Composition so far</h2>
-	<p class="mt-0 max-w-5xl {colors.textSecondary}">
+	<p class="mt-0 mb-4 max-w-5xl {colors.textSecondary}">
 		Each group takes a glyph from the first family of its inheritance order that has one; the
 		following families fill in what is missing. Click a category to see the combined result and
 		to pick single glyphs.

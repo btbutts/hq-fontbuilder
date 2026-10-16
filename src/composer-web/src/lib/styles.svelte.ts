@@ -195,6 +195,17 @@ export const colors = {
 	bareIconButton:
 		'text-[#555555] hover:text-[#1c1c1e] dark:text-[#e6e6e6] dark:hover:text-[#ffffff]',
 
+	/**
+	 * The arrow that opens and closes a note list (the one before the explanation above the
+	 * coverage table). The red of `textAccent2` at rest; `hover` needs a `group` on the
+	 * element that holds the arrow and its label, so the arrow follows the pointer over
+	 * either, and turns to the colour of `textPrimary`.
+	 */
+	disclosureIcon: {
+		rest: 'text-[#b02e2e] dark:text-[#d63838]',
+		hover: 'group-hover:text-[#1c1c1e] dark:group-hover:text-[#cccccc]'
+	},
+
 	/** The toolbar's menu button: like `bareIconButton` at rest, the red of `textAccent2` under
 	 *  the pointer. */
 	menuIconButton:

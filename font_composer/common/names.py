@@ -20,8 +20,8 @@ from font_composer.common.paths import PROJECT_ROOT
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-NAMES_URL = "https://www.unicode.org/Public/UCD/latest/ucd/NamesList.txt"
-DEFAULT_NAMES_PATH = PROJECT_ROOT / "src" / "char-sets" / "NamesList.txt"
+UNICODE_CHAR_NAMES_URL = "https://www.unicode.org/Public/UCD/latest/ucd/NamesList.txt"
+UNICODE_CHAR_NAMES_PATH = PROJECT_ROOT / "src" / "char-sets" / "NamesList.txt"
 
 _CHARACTER_LINE = re.compile(r"^([0-9A-F]{4,6})\t(\S.*)$")
 _TIMEOUT_SECONDS = 60
@@ -53,8 +53,8 @@ def _download(url: str) -> bytes:
 
 
 def ensure_names_list(
-    path: Path = DEFAULT_NAMES_PATH,
-    url: str = NAMES_URL,
+    path: Path = UNICODE_CHAR_NAMES_PATH,
+    url: str = UNICODE_CHAR_NAMES_URL,
     *,
     fetch: Callable[[str], bytes] = _download,
     say: Callable[[str], None] = print,
@@ -88,7 +88,7 @@ def _store(path: Path, data: bytes) -> None:
 class UnicodeNames:
     """Lazily loaded code point -> official name dictionary."""
 
-    def __init__(self, path: Path = DEFAULT_NAMES_PATH) -> None:
+    def __init__(self, path: Path = UNICODE_CHAR_NAMES_PATH) -> None:
         """Remember where the names list is; nothing is read until a name is asked for."""
         self._path = path
         self._names: dict[int, str] | None = None

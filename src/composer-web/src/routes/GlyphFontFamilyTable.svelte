@@ -1,4 +1,5 @@
 <script lang="ts">
+	import IconEqualNot from '@tabler/icons-svelte/icons/equal-not';
 	import type { ComposerState, FamilyInfo } from '#lib/data/api.ts';
 	import { colors } from '#lib/styles.svelte.ts';
 	import { ColumnOrder } from '#lib/table/columnOrder.svelte.ts';
@@ -95,7 +96,7 @@
 							.join('\n')
 					)}
 				>
-					{present}/{total}{uneven ? ' ≠' : ''}{#if position >= 0}<sup class="ml-0.5 text-[0.7em] opacity-80">{position + 1}</sup>{/if}
+					{present}/{total}{#if uneven}<IconEqualNot size="1em" class="ml-[0.25em] inline-block align-[-0.15em]" />{/if}{#if position >= 0}<sup class="ml-0.5 text-[0.7em] opacity-80">{position + 1}</sup>{/if}
 				</a>
 			</div>
 		{/snippet}
