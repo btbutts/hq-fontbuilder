@@ -16,7 +16,7 @@ from pty_support import LOG_LINES, Session, screen_of
 from support import build_font
 
 PROMPT = "Press 'Q' to quit or 'R' to Reload"
-ADDRESS = re.compile(r"The proof of the fonts is at: http://127\.0\.0\.1:(\d+)/buildProof")
+ADDRESS = re.compile(r"The proof of the fonts is at: http://localhost:(\d+)/buildProof")
 REQUESTS = 30
 HEADER_LINES = 4
 
@@ -50,9 +50,9 @@ def test_the_proof_has_a_header_a_tail_window_reload_and_quit(tmp_path: Path) ->
         screen = screen_of(session.output)
         screen = screen[next(i for i, line in enumerate(screen)
                              if line.startswith("The proof of the fonts is at")):]
-        url = f"http://127.0.0.1:{session.port}/buildProof"
+        url = f"http://localhost:{session.port}/buildProof"
         assert screen[0] == f"The proof of the fonts is at: {url}"
-        assert screen[1].lstrip() == "listening on IP Addresses: 127.0.0.1"
+        assert screen[1].lstrip() == "listening on IP Addresses: 127.0.0.1, ::1"
         assert screen[2].lstrip().startswith("fonts written to: ")
         assert screen[3].lstrip() == "styles: Regular (1 of 1 written)"
         log = screen[HEADER_LINES:-1]

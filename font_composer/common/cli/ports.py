@@ -22,7 +22,8 @@ import socket
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
+    from socketserver import BaseServer
 
 LOCALHOST = "localhost"
 LOOPBACK_ADDRESSES = ("127.0.0.1", "::1")
@@ -126,3 +127,41 @@ def pick_port(
         f"no free port in {ranges} on {host_label}. Choose one with --port."
     )
     raise PortUnavailableError(message)
+
+
+def _bind[S: BaseServer](address: str, port: int, make: Callable[[str, int], S]) -> S | None:
+    """Bind one server, or return None for an IPv6 address this machine cannot use."""
+    try:
+        return make(address, port)
+    except OSError as exc:
+        unusable = {errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT}
+        if ":" in address and exc.errno in unusable:
+            return None
+        raise
+
+
+def open_servers[S: BaseServer](
+    addresses: list[str], port: int, make: Callable[[str, int], S],
+) -> list[S]:
+    """Bind one server per address with ``make(address, port)``; all of them or, on failure, none.
+
+    An IPv6 address this machine cannot bind (IPv6 switched off) is skipped as long as
+    another address could be bound.
+    """
+    servers: list[S] = []
+    try:
+        for address in addresses:
+            server = _bind(address, port, make)
+            if server is not None:
+                servers.append(server)
+    except OSError as exc:
+        for server in servers:
+            server.server_close()
+        if exc.errno == errno.EADDRINUSE:
+            message = f"port {port} was taken just now; run the command again"
+            raise PortUnavailableError(message) from exc
+        raise
+    if not servers:
+        message = f"cannot listen on {', '.join(addresses)}: no usable address"
+        raise PortUnavailableError(message)
+    return servers

@@ -336,17 +336,23 @@ lists every font the result is made of with its copyright and licence text.
   Elements. Smaller misses, misses in arcs, diagonals and dashed lines, and misses in the
   base font's own glyphs are warnings. Nothing is retried or repaired: the glyphs are the
   font designer's, and the build only passes on what it can show.
-* **See it: `--show-proof`.** `build --show-proof` serves, once the fonts are written, a
+* **See it: `--show-proof`.** Once the fonts are written, `build --show-proof` shows a
   hidden page of the console's web interface (`/buildProof`, linked from nowhere) and prints its
-  address; open it in a browser. It stays on the terminal like the console does (the address and
-  what was written above a window of the requests, and `Press 'Q' to quit or 'R' to Reload`;
-  **R** starts the command over, so the fonts are built again), and it draws, with each written
+  address; open it in a browser. *Who serves it:* if a console (`compose`) is already running, on
+  the port you give with `--port` or the one it saved in the config, the build hands it the
+  written fonts, prints the same kind of address with that port and ends; the console shows the
+  page until it is stopped. Otherwise the build serves the page itself, choosing its port as
+  the console does (`--port`, else the saved port if it is free, else a free one; every local
+  address), and stays on the terminal like the console does (the address and what was written
+  above a window of the requests, and `Press 'Q' to quit or 'R' to Reload`; **R** starts the
+  command over, so the fonts are built again). The page draws, with each written
   font, a thin table, a thick one, the four tables that are thick in one half and thin in the
   other (top, bottom, left, right), a double one, one with rounded corners and the
   Block Elements, and lists the lines the check found apart. The toolbar (it stays at the top
   while you scroll) has a **Cell Size** slider, **Show Cell Edges** and **Browser Text
-  Rendering**. Only `build --show-proof` serves the page: the console (`compose`) does not
-  answer for it.
+  Rendering**. Nothing but the page's own data and the written fonts are answered by the
+  build's server; a console takes the fonts only as absolute paths of font files, and only
+  from a request that is JSON, like every change the console accepts.
 
   *Why the cells are whole pixels.* A console gives every character a cell of a whole number
   of pixels, and a browser does not: at any other size its anti-aliasing leaves a faint lighter

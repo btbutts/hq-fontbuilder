@@ -54,7 +54,6 @@ The state the routes serialize lives in :mod:`font_composer.composer.state`.
 
 from __future__ import annotations
 
-import errno
 import json
 import socket
 import threading
@@ -63,11 +62,14 @@ from pathlib import Path
 from typing import Any, TypeGuard, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
+from fontTools.ttLib import TTLibError
+
+from font_composer.builder.proof import FONT_PREFIX, ProofSet, parse_proof_request
 from font_composer.common.cli.console_ui import Action
 from font_composer.common.cli.ports import (
     LOCALHOST,
-    PortUnavailableError,
     local_addresses,
+    open_servers,
     pick_port,
 )
 from font_composer.common.cli.session import present
@@ -98,15 +100,33 @@ _FONT_URL_PARTS = 2  # /fonts/<family>/<filename>
 _TRUE_FLAGS = ("1", "true")
 
 
-class ConsoleHTTPServer(ThreadingHTTPServer):
-    """Threading server on one IP address, carrying the shared :class:`ConsoleState`."""
+class SpaServer(ThreadingHTTPServer):
+    """Threading server on one IPv4 or IPv6 address that serves the SPA and a build proof.
+
+    The servers of one console share its proof (``proof``); a console that is handed the
+    fonts of a build shows them, and so does the server a build starts for itself.
+    """
 
     daemon_threads = True
 
-    def __init__(self, address: str, port: int, state: ConsoleState) -> None:
-        """Bind on one IPv4 or IPv6 address; the console is meant for localhost use."""
+    def __init__(
+        self, address: str, port: int, handler: type[BaseHTTPRequestHandler],
+        proof: ProofSet | None = None,
+    ) -> None:
+        """Bind on one address; the console is meant for localhost use."""
         self.address_family = socket.AF_INET6 if ":" in address else socket.AF_INET
-        super().__init__((address, port), _Handler)
+        super().__init__((address, port), handler)
+        self.proof = proof if proof is not None else ProofSet()
+
+
+class ConsoleHTTPServer(SpaServer):
+    """The console's server on one address, carrying the shared :class:`ConsoleState`."""
+
+    def __init__(
+        self, address: str, port: int, state: ConsoleState, proof: ProofSet | None = None,
+    ) -> None:
+        """Bind on one address; ``proof`` is the build proof the console shows."""
+        super().__init__(address, port, _Handler, proof)
         self.state = state
 
 
@@ -175,6 +195,27 @@ class StaticHandler(BaseHTTPRequestHandler):
     def _route_get(self) -> None:
         """Dispatch GET requests: the SPA only."""
         self._get_static(urlparse(self.path).path)
+
+    @property
+    def _proof(self) -> ProofSet:
+        """The build proof of the server this handler belongs to."""
+        return cast("SpaServer", self.server).proof
+
+    def _get_proof(self, path: str) -> None:
+        """Serve ``/api/proof`` or one of the proof's fonts (``/proof-fonts/<file>``)."""
+        if path == "/api/proof":
+            payload = self._proof.payload
+            if payload is None:
+                self._send_json({"error": "no proof: run the build with --show-proof"}, status=404)
+            else:
+                self._send_json(payload)
+            return
+        name = unquote(path.removeprefix(FONT_PREFIX))
+        target = self._proof.file(name)
+        if target is None:
+            self._send_json({"error": f"not found: {name}"}, status=404)
+            return
+        self._send_file(target, _FONT_TYPES.get(target.suffix.lower(), "application/octet-stream"))
 
     def _route_post(self) -> None:
         """Refuse POST requests: there is nothing to change."""
@@ -267,6 +308,8 @@ class _Handler(StaticHandler):
             status, payload = self._state.composition(
                 query.get("group", [""])[0], query.get("order"), overlay=_flag(query))
             self._send_json(payload, status=status)
+        elif path == "/api/proof" or path.startswith(FONT_PREFIX):
+            self._get_proof(path)
         elif path.startswith("/fonts/"):
             self._get_font(path.removeprefix("/fonts/"))
         else:
@@ -297,7 +340,8 @@ class _Handler(StaticHandler):
                     "/api/style-type": self._post_style_type,
                     "/api/style-consolidate": self._post_style_consolidate,
                     "/api/style-name": self._post_style_name,
-                    "/api/overlay-store": self._post_overlay_store}
+                    "/api/overlay-store": self._post_overlay_store,
+                    "/api/proof": self._post_proof}
         handler = handlers.get(path)
         if handler is None:
             self._send_json({"error": f"not found: {path}"}, status=404)
@@ -350,6 +394,17 @@ class _Handler(StaticHandler):
             return 400, {"error": "file must be a string or null"}
         return self._state.set_style(style, family, file_name)
 
+    def _post_proof(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """``{fonts: [{style, path}]}``: show these written fonts as the build proof."""
+        fonts = parse_proof_request(body)
+        if isinstance(fonts, str):
+            return 400, {"error": fonts}
+        try:
+            self._proof.replace(fonts)
+        except (OSError, KeyError, TTLibError) as exc:
+            return 400, {"error": f"cannot read a font: {exc}"}
+        return 200, {"fonts": len(fonts)}
+
     def _post_style_type(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """``{style, included}``: consider a style type or leave it out."""
         style, included = body.get("style"), body.get("included")
@@ -391,42 +446,6 @@ class _Handler(StaticHandler):
 def _url_host(host: str) -> str:
     """Return the host as it is written in a URL (IPv6 literals in brackets)."""
     return f"[{host}]" if ":" in host else host
-
-
-def _bind(address: str, port: int, state: ConsoleState) -> ConsoleHTTPServer | None:
-    """Bind one server, or return None for an IPv6 address this machine cannot use."""
-    try:
-        return ConsoleHTTPServer(address, port, state)
-    except OSError as exc:
-        unusable = {errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT, errno.EPROTONOSUPPORT}
-        if ":" in address and exc.errno in unusable:
-            return None
-        raise
-
-
-def _open_servers(addresses: list[str], port: int, state: ConsoleState) -> list[ConsoleHTTPServer]:
-    """Bind one server per address; all of them or, on failure, none.
-
-    An IPv6 address this machine cannot bind (IPv6 switched off) is skipped as long as
-    another address could be bound.
-    """
-    servers: list[ConsoleHTTPServer] = []
-    try:
-        for address in addresses:
-            server = _bind(address, port, state)
-            if server is not None:
-                servers.append(server)
-    except OSError as exc:
-        for server in servers:
-            server.server_close()
-        if exc.errno == errno.EADDRINUSE:
-            message = f"port {port} was taken just now; run the command again"
-            raise PortUnavailableError(message) from exc
-        raise
-    if not servers:
-        message = f"cannot listen on {', '.join(addresses)}: no usable address"
-        raise PortUnavailableError(message)
-    return servers
 
 
 def _header(host: str, port: int, bound: list[str], fonts_dir: Path, config: Config) -> list[str]:
@@ -475,7 +494,9 @@ def serve(
     addresses = local_addresses(host)
     chosen, notice = pick_port(addresses, host, port, config.saved_port)
     state = ConsoleState(fonts_dir, config)
-    servers = _open_servers(addresses, chosen, state)
+    proof = ProofSet()
+    servers = open_servers(
+        addresses, chosen, lambda address, number: ConsoleHTTPServer(address, number, state, proof))
     bound = [str(server.server_address[0]) for server in servers]
     notes = _startup_notes(config, chosen, notice, addresses, bound)
     watcher = DirectoryWatcher(fonts_dir, state.refresh)
@@ -484,10 +505,10 @@ def serve(
         threading.Thread(target=server.serve_forever, name=f"console-{server.server_address[0]}",
                          daemon=True).start()
     try:
-        action = present(_header(host, chosen, bound, fonts_dir, config), notes, monitor=monitor)
+        return present(_header(host, chosen, bound, fonts_dir, config), notes,
+                       monitor=monitor) is Action.RELOAD
     finally:
         for server in servers:
             server.shutdown()
             server.server_close()
         watcher.stop()
-    return action is Action.RELOAD

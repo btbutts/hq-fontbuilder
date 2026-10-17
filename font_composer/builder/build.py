@@ -38,6 +38,7 @@ from font_composer.builder.donors import (
     resolve_donor,
     synthesize_start,
 )
+from font_composer.builder.proof import ProofFont
 from font_composer.builder.verify import verify_font
 from font_composer.common.composition import resolve_group
 from font_composer.common.config import DEFAULT_STYLES, Config, ConfigError
@@ -46,7 +47,6 @@ from font_composer.common.fonts.styles import output_styles, parse_style_name, s
 from font_composer.common.paths import DEFAULT_FONTS_DIR, DEFAULT_OUTPUT_DIR
 from font_composer.common.unicode.groups import Catalog
 from font_composer.composer.web import proof
-from font_composer.composer.web.proof import ProofFont
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
@@ -73,8 +73,10 @@ class BuildOptions:
     fonts_dir: Path | None = None
     output_dir: Path | None = None
     on_missing: str = "ask"
-    #: after the build, serve a page that draws the box glyphs of the written fonts
+    #: after the build, show a page that draws the box glyphs of the written fonts
     show_proof: bool = False
+    #: the port for that page when the build serves it itself (None: as the console chooses)
+    port: int | None = None
 
 
 @dataclass
@@ -449,17 +451,28 @@ def _start(
     return _Run(settled, config, library, plan, say)
 
 
-def _show_proof(
-    written: list[ProofFont], total: int, say: Callable[[str], None],
-) -> None:
-    """Serve the proof page of the fonts that were written (until the user quits)."""
+def _show_proof(written: list[ProofFont], total: int, run: _Run) -> None:
+    """Show the proof page of the fonts that were written.
+
+    A console that is already running, on the port asked for or the one it saved, is handed
+    the fonts and serves the page; the address is printed and that is all. Otherwise the build
+    serves the page itself, until the user quits.
+    """
+    say = run.say
     if not written:
         say("font_composer: no font was written, so there is nothing to show a proof of")
         return
+    url = proof.reuse_console(written, run.options.port or run.config.saved_port)
+    if url is not None:
+        say(f"\nThe proof of the rendered fonts are viewable at: {url}\n"
+            "It is shown by the font_composer console that is already running, until that "
+            "console is stopped.")
+        return
     names = ", ".join(font.style for font in written)
     failed = "" if len(written) == total else "; see the report above"
-    proof.serve_proof(written, say,
-                      details=[f"styles: {names} ({len(written)} of {total} written{failed})"])
+    styles = f"styles: {names} ({len(written)} of {total} written{failed})"
+    proof.serve_proof(written, say, details=[styles], port=run.options.port,
+                      saved_port=run.config.saved_port)
 
 
 def run_build(
@@ -486,5 +499,5 @@ def run_build(
     say(f"\nNOTICE: {out_dir / 'NOTICE'}")
     if run.options.show_proof:
         _show_proof([ProofFont(style, path) for style, path in results.items()
-                     if path is not None], len(results), say)
+                     if path is not None], len(results), run)
     return 0 if all(path is not None for path in results.values()) else 1

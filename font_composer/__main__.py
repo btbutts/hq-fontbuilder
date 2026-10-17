@@ -70,8 +70,9 @@ examples:
       write somewhere else, and never ask: use the nearest style of a family
       that lacks one
   {_PROG} build --show-proof
-      then serve a page that draws tables with the box glyphs of the written
-      fonts, so you can see that they join (open the address it prints)
+      then show a page that draws tables with the box glyphs of the written
+      fonts, so you can see that they join (open the address it prints); a
+      running console shows it, else the build serves it until you quit
 """
 
 _COMPOSE_DESCRIPTION = """\
@@ -194,9 +195,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
              "style, synthesize a bold from the nearest lighter one, or fail")
     build_parser.add_argument(
         "--show-proof", action="store_true",
-        help="after the build, serve a page that draws tables with the box glyphs of the "
-             "written fonts, so you can see that they join; the address is printed and "
-             "Ctrl-C ends it")
+        help="after the build, show a page that draws tables with the box glyphs of the "
+             "written fonts, so you can see that they join. A console (compose) that is "
+             "already running shows it, and the address is printed; otherwise the build "
+             "serves it until you quit (Q, or Ctrl-C)")
+    build_parser.add_argument(
+        "--port", type=_port, default=None, metavar="PORT",
+        help="with --show-proof: the port of the console that shows the page, or of the "
+             "server the build starts for it (default: the port saved in the config, if a "
+             "console is on it or it is free, else a free one)")
     return parser.parse_args(argv)
 
 
@@ -317,7 +324,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "compose":
         return run_compose(args)
     return run_build(BuildOptions(args.config, args.fonts_dir, args.output_dir,
-                                  args.on_missing, show_proof=args.show_proof))
+                                  args.on_missing, show_proof=args.show_proof, port=args.port))
 
 
 if __name__ == "__main__":
