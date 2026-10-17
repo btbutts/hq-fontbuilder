@@ -6,22 +6,30 @@ knows how to scan the fonts directory). :class:`ConsoleState` is what the watche
 refreshes and what the HTTP server serializes; every successful choice saves the
 configuration and bumps the version counter the pages poll. Each snapshot also picks up
 hand edits of the configuration file; one that does not parse is reported in the
-payload (``configError``) while the last good configuration stays in force.
+payload (``configError``) while the last good configuration stays in force. The rows of
+the table come from the catalog (the Unicode blocks, or with the overlay on its
+categories) and only those some font has glyphs for are listed.
 """
 
 from __future__ import annotations
 
 import threading
-from pathlib import Path
-from typing import Any
+from collections import Counter
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any
 
-from font_composer.common.composition import GroupComposition, resolve_group
+from font_composer.common.composition import (
+    GroupComposition,
+    ResolvedGlyph,
+    generate_pins,
+    resolve_group,
+)
 from font_composer.common.config import DEFAULT_STYLES, Config, ConfigError
 from font_composer.common.fit import EPS, CellSpec, FitPlan
-from font_composer.common.groups import GROUPS, GROUPS_BY_ID, GlyphGroup
+from font_composer.common.groups import Catalog, GlyphGroup
 from font_composer.common.library import Family, FontLibrary, StyleEntry
 from font_composer.common.names import UnicodeNames
-from font_composer.common.planner import cell_of, plan_glyphs
+from font_composer.common.planner import FitTarget, cell_of, plan_glyphs
 from font_composer.common.styles import (
     find_style,
     is_included,
@@ -33,10 +41,15 @@ from font_composer.common.styles import (
     style_options,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import Iterable, Mapping, Sequence
+    from pathlib import Path
+
 CHOICE_ACTIONS = ("add", "remove", "up", "down", "clear")
 
 _FIT_ALL_STYLES_MAX = 512
 _FIT_REQUEST_MAX = 2048
+_NOTHING = GroupComposition((), 0, ())
 
 
 def _fit_payload(plan: FitPlan) -> dict[str, Any]:
@@ -51,10 +64,13 @@ def _fit_payload(plan: FitPlan) -> dict[str, Any]:
     }
 
 
-def coverage_matrix(library: FontLibrary) -> dict[str, dict[str, tuple[int, int]]]:
+def coverage_matrix(
+    library: FontLibrary, groups: Iterable[GlyphGroup],
+) -> dict[str, dict[str, tuple[int, int]]]:
     """Family label -> group id -> ``(present, total)``."""
+    rows = tuple(groups)
     return {
-        family.label: {group.id: family.coverage(group) for group in GROUPS}
+        family.label: {group.id: family.coverage(group) for group in rows}
         for family in library.families
     }
 
@@ -66,6 +82,105 @@ def full_coverage_families(library: FontLibrary, group: GlyphGroup) -> list[str]
         for family in library.families
         if family.coverage(group)[0] == group.total
     ]
+
+
+def _fonts_with_glyphs(library: FontLibrary, group: GlyphGroup) -> list[dict[str, Any]]:
+    """List the families whose reference style has glyphs in a group, with how many."""
+    fonts: list[dict[str, Any]] = []
+    for family in library.families:
+        count = family.coverage(group)[0]
+        if count:
+            fonts.append({"family": family.label, "name": family.display_name, "count": count})
+    return fonts
+
+
+def _group_payload(group: GlyphGroup, fonts: list[dict[str, Any]]) -> dict[str, Any]:
+    """Serialize one row of the table for ``/api/state``."""
+    return {
+        "id": group.id, "label": group.label, "total": group.total, "atomic": group.atomic,
+        "overlay": group.overlay, "block": group.block,
+        "ranges": [[low, high] for low, high in group.runs],
+        "rows": [{"label": label, "low": low, "high": high} for label, low, high in group.rows],
+        "fonts": fonts,
+    }
+
+
+@dataclass(frozen=True)
+class _Settings:
+    """What the configuration says about who serves a code point."""
+
+    choices: dict[str, list[str]]
+    overrides: dict[int, str]
+    generated: dict[int, list[str]]
+    stored: dict[str, list[str]] | None
+
+
+@dataclass(frozen=True)
+class _StyleSettings:
+    """What the configuration says about the output styles."""
+
+    included: list[str]
+    consolidate: bool
+    configured: tuple[dict[str, dict[str, str]], dict[str, str]]
+
+
+@dataclass(frozen=True)
+class _Captured:
+    """What a snapshot reads from the state and the configuration, under the lock."""
+
+    library: FontLibrary
+    version: int
+    base: dict[str, Any] | None
+    config_error: str | None
+    settings: _Settings
+    styles: _StyleSettings
+
+
+def _serving(
+    catalog: Catalog, rows: Sequence[GlyphGroup], view: _Captured,
+) -> dict[str, list[ResolvedGlyph]]:
+    """Resolve each block that has an order or pins once; return what each row is served."""
+    settings = view.settings
+    pins: dict[str, dict[int, Sequence[str]]] = {}
+    for codepoint, families in settings.generated.items():
+        block = catalog.group_of(codepoint)
+        if block is not None:
+            pins.setdefault(block.id, {})[codepoint] = families
+    resolved: dict[str, GroupComposition] = {}
+    served: dict[str, list[ResolvedGlyph]] = {}
+    for row in rows:
+        block = catalog.by_id(row.block)
+        if block is None:
+            continue
+        if block.id not in resolved:
+            order = settings.choices.get(block.id, [])
+            here = pins.get(block.id, {})
+            resolved[block.id] = (
+                resolve_group(block, order, view.library, settings.overrides, here)
+                if order or here else _NOTHING)
+        glyphs = resolved[block.id].glyphs
+        served[row.id] = (list(glyphs) if row is block
+                          else [glyph for glyph in glyphs if row.contains(glyph.codepoint)])
+    return served
+
+
+def _summary(
+    rows: Sequence[GlyphGroup], orders: Mapping[str, Sequence[str]],
+    served: Mapping[str, list[ResolvedGlyph]], library: FontLibrary,
+) -> list[dict[str, Any]]:
+    """Describe, per row, the order, how much of it is served and by whom."""
+    summary = []
+    for row in rows:
+        glyphs = served.get(row.id, [])
+        summary.append({
+            "group": row.id,
+            "order": list(orders.get(row.id, [])),
+            "covered": len(glyphs),
+            "total": row.total,
+            "candidates": full_coverage_families(library, row),
+            "sources": dict(Counter(glyph.source for glyph in glyphs)),
+        })
+    return summary
 
 
 def _style_payload(family: Family, entry_index: int) -> dict[str, Any]:
@@ -88,7 +203,6 @@ def _style_payload(family: Family, entry_index: int) -> dict[str, Any]:
         "cellAdvance": metrics.cell_advance,
         "modalAdvance": entry.info.modal_advance,
         "codepointCount": len(entry.info.codepoints),
-        "coverage": entry.group_coverage,
     }
 
 
@@ -108,15 +222,21 @@ class ConsoleState:
 
     def __init__(
         self, fonts_dir: Path, config: Config, names: UnicodeNames | None = None,
+        catalog: Catalog | None = None,
     ) -> None:
         """Scan the fonts directory once; :meth:`refresh` rescans on changes."""
-        self.fonts_dir = fonts_dir
         self.config = config
         self.names = names if names is not None else UnicodeNames()
+        self.catalog = catalog if catalog is not None else Catalog.load(names=self.names)
         self.version = 0
         self.library = FontLibrary.scan(fonts_dir)
         self.config_error: str | None = None
         self._lock = threading.Lock()
+
+    @property
+    def fonts_dir(self) -> Path:
+        """The directory the library was scanned from."""
+        return self.library.fonts_dir
 
     def refresh(self) -> None:
         """Rescan the fonts directory and bump the version (the watcher callback).
@@ -172,72 +292,72 @@ class ConsoleState:
             "cellAdvance": metrics.cell_advance,
         }
 
-    def snapshot(self) -> dict[str, Any]:
-        """Build the ``/api/state`` payload."""
+    def snapshot(self, *, overlay: bool = False) -> dict[str, Any]:
+        """Build the ``/api/state`` payload; ``overlay`` picks the rows of the overlay view."""
         with self._lock:
             self._reload_config()
-            library = self.library
-            choices = self.config.choices
-            version = self.version
-            base = self._base_metrics()
-            config_error = self.config_error
-            overrides = self.config.glyph_overrides
-            included = self.config.setting("output", "styles", list(DEFAULT_STYLES))
-            consolidate = self.config.setting("output", "consolidate_styles", True)
-            configured = (self.config.style_overrides, self.config.style_names)
-        built_styles = output_styles(library, included, consolidate=consolidate)
-        summary = []
-        for group in GROUPS:
-            order = choices.get(group.id, [])
-            covered = 0
-            if order:
-                covered = len(resolve_group(group, order, library, overrides).glyphs)
-            summary.append({
-                "group": group.id,
-                "order": order,
-                "covered": covered,
-                "total": group.total,
-                "candidates": full_coverage_families(library, group),
-            })
+            tables = self.config.overlay
+            view = _Captured(
+                library=self.library, version=self.version, base=self._base_metrics(),
+                config_error=self.config_error,
+                settings=_Settings(
+                    choices=self.config.choices, overrides=self.config.glyph_overrides,
+                    generated=tables.pins, stored=tables.orders),
+                styles=_StyleSettings(
+                    included=self.config.setting("output", "styles", list(DEFAULT_STYLES)),
+                    consolidate=self.config.setting("output", "consolidate_styles", True),
+                    configured=(self.config.style_overrides, self.config.style_names)))
+        library, settings, styles = view.library, view.settings, view.styles
+        fonts = {row.id: _fonts_with_glyphs(library, row)
+                 for row in self.catalog.rows(overlay=overlay)}
+        rows = [row for row in self.catalog.rows(overlay=overlay) if fonts[row.id]]
+        orders = {**settings.choices, **(settings.stored or {})}
         return {
-            "version": version,
-            "fontsDir": str(self.fonts_dir),
-            "groups": [
-                {"id": group.id, "label": group.label, "total": group.total,
-                 "atomic": group.atomic,
-                 "ranges": [[low, high] for low, high in group.ranges]}
-                for group in GROUPS
-            ],
+            "version": view.version,
+            "fontsDir": str(library.fonts_dir),
+            "catalogReady": bool(self.catalog.blocks),
+            "fontCount": sum(1 for family in library.families if family.styles),
+            "groups": [_group_payload(row, fonts[row.id]) for row in rows],
             "families": [_family_payload(family) for family in library.families],
             "coverage": {label: {group: list(cell) for group, cell in matrix.items()}
-                         for label, matrix in coverage_matrix(library).items()},
-            "uneven": {family.label: sorted(family.uneven_groups())
+                         for label, matrix in coverage_matrix(library, rows).items()},
+            "uneven": {family.label: sorted(family.uneven_groups(rows))
                        for family in library.families},
-            "choices": choices,
-            "glyphOverrides": {f"U+{cp:04X}": family for cp, family in sorted(overrides.items())},
+            "choices": orders,
+            "overlay": {
+                "stored": settings.stored is not None,
+                "orders": settings.stored or {},
+            },
+            "glyphOverrides": {f"U+{cp:04X}": family
+                               for cp, family in sorted(settings.overrides.items())},
             "styleTypes": {
-                "consolidate": consolidate,
+                "consolidate": styles.consolidate,
                 "options": [
-                    {"name": option.name, "included": is_included(option, included),
+                    {"name": option.name, "included": is_included(option, styles.included),
                      "similar": list(option.similar)}
-                    for option in style_options(library, consolidate=consolidate)
+                    for option in style_options(library, consolidate=styles.consolidate)
                 ],
             },
-            "styleMap": _style_map(library, choices, built_styles, configured),
-            "base": base,
-            "summary": summary,
+            "styleMap": _style_map(
+                library, [*settings.choices.values(), *settings.generated.values()],
+                output_styles(library, styles.included, consolidate=styles.consolidate),
+                styles.configured),
+            "base": view.base,
+            "summary": _summary(rows, orders, _serving(self.catalog, rows, view), library),
             "problems": [{"path": str(error.path), "reason": error.reason}
                          for error in library.problems],
-            "configError": config_error,
+            "configError": view.config_error,
         }
 
-    def glyphs(self, family_label: str, group_id: str) -> tuple[int, dict[str, Any]]:
+    def glyphs(
+        self, family_label: str, group_id: str, *, overlay: bool = False,
+    ) -> tuple[int, dict[str, Any]]:
         """List, per style file of a family, the code points of a group it holds.
 
         The group page draws a glyph only where the font has one: a browser would
         otherwise fill a missing code point from some other font on the system.
         """
-        group = GROUPS_BY_ID.get(group_id)
+        group = self.catalog.row(group_id, overlay=overlay)
         if group is None:
             return 400, {"error": f"unknown group: {group_id!r}"}
         with self._lock:
@@ -267,7 +387,7 @@ class ConsoleState:
         Only the code points the style holds are planned; a glyph that simply fits has no
         entry, as in :meth:`glyphs`.
         """
-        group = GROUPS_BY_ID.get(group_id)
+        group = self.catalog.by_id(group_id)
         if group is None:
             return 400, {"error": f"unknown group: {group_id!r}"}
         if len(codepoints) > _FIT_REQUEST_MAX:
@@ -279,44 +399,49 @@ class ConsoleState:
         style = next((item for item in family.styles if item.file_name == file_name), None)
         if style is None:
             return 404, {"error": f"unknown style file: {file_name!r}"}
-        wanted = [
-            cp for cp in codepoints
-            if cp in style.info.codepoints and any(low <= cp <= high for low, high in group.ranges)
-        ]
+        wanted = [cp for cp in codepoints if cp in style.info.codepoints and group.contains(cp)]
         plans = self.fit_plans(family, group, style, wanted)
         fit = {str(cp): _fit_payload(plan) for cp, plan in plans.items()}
         return 200, {"family": family.label, "group": group.id, "file": file_name, "fit": fit}
 
     def choose(
         self, group_id: str, family_label: str | None, action: str,
+        order: list[str] | None = None,
     ) -> tuple[int, dict[str, Any]]:
         """Change the inheritance order of a group; return ``(http_status, payload)``.
 
         ``action`` is ``add`` (append the family; it ends up last), ``remove``, ``up`` or
         ``down`` (move one place) or ``clear`` (no family). An atomic group takes one
-        family, which must cover it completely.
+        family, which must cover it completely. An overlay category has no order in the
+        file: ``order`` is the one the browser holds, the pins it implies are written, and
+        the new order comes back as ``order`` in the payload.
         """
-        group = GROUPS_BY_ID.get(group_id)
+        group = self.catalog.by_id(group_id)
         if group is None:
             return 400, {"error": f"unknown group: {group_id!r}"}
         if action not in CHOICE_ACTIONS:
             return 400, {"error": f"unknown action: {action!r}"}
         with self._lock:
             self._reload_config()
-            order = list(self.config.choices.get(group_id, []))
             problem = self._check_family(action, family_label)
             if problem is not None:
                 return problem
-            result = _new_order(group, order, family_label, action, self.library)
+            current = (list(order or []) if group.overlay
+                       else list(self.config.choices.get(group_id, [])))
+            result = _new_order(group, current, family_label, action, self.library)
             if isinstance(result, tuple):
                 return result
             try:
-                self.config.update(lambda config: _apply_order(config, group, result))
+                if group.overlay:
+                    self.config.update(
+                        lambda config: _apply_overlay_order(config, group, result, self.library))
+                else:
+                    self.config.update(lambda config: _apply_order(config, group, result))
             except ConfigError as exc:
                 return 500, {"error": str(exc)}
             self.config_error = None
             self.version += 1
-        return 200, self.snapshot()
+        return 200, {**self.snapshot(), "order": result}
 
     def _check_family(
         self, action: str, family_label: str | None,
@@ -341,29 +466,43 @@ class ConsoleState:
         base = self._base_cell()
         if base is None:
             return {}
-        return plan_glyphs(family, group, style, codepoints, base)
+        return plan_glyphs(family, group, style, codepoints, FitTarget(base, self.catalog))
 
-    def glyph_names(self, group_id: str) -> tuple[int, dict[str, Any]]:
+    def glyph_names(
+        self, group_id: str, *, overlay: bool = False,
+    ) -> tuple[int, dict[str, Any]]:
         """Return the official names of the code points of a group that have one."""
-        group = GROUPS_BY_ID.get(group_id)
+        group = self.catalog.row(group_id, overlay=overlay)
         if group is None:
             return 400, {"error": f"unknown group: {group_id!r}"}
         names = self.names.for_codepoints(group.codepoints)
         return 200, {"group": group.id, "names": {str(cp): name for cp, name in names.items()}}
 
-    def composition(self, group_id: str) -> tuple[int, dict[str, Any]]:
-        """Resolve a group through its inheritance order and the glyph overrides."""
-        group = GROUPS_BY_ID.get(group_id)
+    def composition(
+        self, group_id: str, order: list[str] | None = None, *, overlay: bool = False,
+    ) -> tuple[int, dict[str, Any]]:
+        """Resolve a group through its inheritance order and the glyph pins.
+
+        An overlay category is resolved through ``order`` (the browser's; the stored one
+        when none is sent). A block uses its own order and the generated pins.
+        """
+        group = self.catalog.row(group_id, overlay=overlay)
         if group is None:
             return 400, {"error": f"unknown group: {group_id!r}"}
         with self._lock:
             self._reload_config()
             library = self.library
-            order = list(self.config.choices.get(group_id, []))
             overrides = self.config.glyph_overrides
             version = self.version
-        composition = resolve_group(group, order, library, overrides)
-        payload = _composition_payload(group, order, library, composition, version)
+            generated: dict[int, list[str]] | None = None
+            if group.overlay:
+                stored = (self.config.overlay.orders or {}).get(group_id, [])
+                effective = list(order) if order is not None else list(stored)
+            else:
+                effective = list(self.config.choices.get(group_id, []))
+                generated = self.config.overlay.pins
+        composition = resolve_group(group, effective, library, overrides, generated)
+        payload = _composition_payload(group, effective, library, composition, version)
         self._add_fits(group, library, payload)
         return 200, payload
 
@@ -383,15 +522,26 @@ class ConsoleState:
             if plan is not None:
                 glyph["fit"] = _fit_payload(plan)
 
-    def set_glyph(self, codepoint: int, family_label: str | None) -> tuple[int, dict[str, Any]]:
-        """Pin one code point to one of its candidate families (None: back to the order)."""
-        group = next((item for item in GROUPS if codepoint in item.codepoint_set), None)
-        if group is None:
+    def set_glyph(
+        self, codepoint: int, family_label: str | None, group_id: str | None = None,
+        order: list[str] | None = None,
+    ) -> tuple[int, dict[str, Any]]:
+        """Pin one code point to one of its candidate families (None: back to the order).
+
+        ``group_id`` and ``order`` name an overlay category and the order the browser
+        holds for it; without them the code point's block decides.
+        """
+        group = self.catalog.by_id(group_id) if group_id else self.catalog.group_of(codepoint)
+        if group is None or not group.contains(codepoint):
             return 400, {"error": f"U+{codepoint:04X} is not in any glyph group"}
         with self._lock:
             self._reload_config()
-            order = list(self.config.choices.get(group.id, []))
-            problem = _glyph_problem(group, order, codepoint, family_label, self.library)
+            if group.overlay:
+                allowed = list(order or [])
+            else:
+                allowed = [*self.config.choices.get(group.id, []),
+                           *self.config.overlay.pins.get(codepoint, [])]
+            problem = _glyph_problem(group, allowed, codepoint, family_label, self.library)
             if problem is not None:
                 return problem
             try:
@@ -400,7 +550,25 @@ class ConsoleState:
             except ConfigError as exc:
                 return 500, {"error": str(exc)}
             self.version += 1
-        return self.composition(group.id)
+        return self.composition(group.id, order if group.overlay else None, overlay=group.overlay)
+
+    def set_overlay_store(
+        self, *, enabled: bool, orders: dict[str, list[str]],
+    ) -> tuple[int, dict[str, Any]]:
+        """Keep the overlay orders in ``[overlay_orders]`` (``enabled``), or remove the table."""
+        for group_id in orders if enabled else ():
+            group = self.catalog.by_id(group_id)
+            if group is None or not group.overlay:
+                return 400, {"error": f"not an overlay category: {group_id!r}"}
+        with self._lock:
+            self._reload_config()
+            try:
+                self.config.update(
+                    lambda config: config.overlay.set_orders(orders if enabled else None))
+            except ConfigError as exc:
+                return 500, {"error": str(exc)}
+            self.version += 1
+        return 200, self.snapshot()
 
     def set_style_included(self, style: str, *, included: bool) -> tuple[int, dict[str, Any]]:
         """Bring a style into the considered styles (``[output] styles``), or leave it out.
@@ -573,15 +741,28 @@ def _atomic_add(
 
 
 def _apply_order(config: Config, group: GlyphGroup, order: list[str]) -> None:
-    """Write the order, and drop the glyph overrides of families that left the group."""
+    """Write the order, and drop the glyph pins of families that left the group."""
     config.set_families(group.id, order)
+    generated = config.overlay.pins
     for codepoint, family in config.glyph_overrides.items():
-        if codepoint in group.codepoint_set and family not in order:
+        if (group.contains(codepoint) and family not in order
+                and family not in generated.get(codepoint, ())):
             config.set_glyph_override(codepoint, None)
 
 
+def _apply_overlay_order(
+    config: Config, group: GlyphGroup, order: list[str], library: FontLibrary,
+) -> None:
+    """Write the pins an overlay order implies, and drop the glyph pins of families that left."""
+    config.overlay.replace_pins(group.codepoints, generate_pins(group, order, library))
+    for codepoint, family in config.glyph_overrides.items():
+        if group.contains(codepoint) and family not in order:
+            config.set_glyph_override(codepoint, None)
+    config.overlay.set_order(group.id, order)
+
+
 def _glyph_problem(
-    group: GlyphGroup, order: list[str], codepoint: int, label: str | None,
+    group: GlyphGroup, allowed: list[str], codepoint: int, label: str | None,
     library: FontLibrary,
 ) -> tuple[int, dict[str, Any]] | None:
     """Return an error answer when a glyph may not be pinned to this family."""
@@ -591,7 +772,7 @@ def _glyph_problem(
         reference = family.regular_style() if family is not None else None
         if group.atomic:
             message = f"{group.id} is atomic: its glyphs cannot be mixed"
-        elif label not in order:
+        elif label not in allowed:
             message = f"{label} is not in the inheritance order of {group.id}"
         elif reference is None or codepoint not in reference.info.codepoints:
             message = f"{label} has no glyph for U+{codepoint:04X}"
@@ -602,10 +783,16 @@ def _composition_payload(
     group: GlyphGroup, order: list[str], library: FontLibrary,
     composition: GroupComposition, version: int,
 ) -> dict[str, Any]:
-    """Serialize a resolved group for ``/api/composition``."""
+    """Serialize a resolved group for ``/api/composition``.
+
+    ``extra`` lists the families that serve or could serve a glyph without being in
+    ``order`` (the families of the generated pins of a block).
+    """
+    used = [label for glyph in composition.glyphs for label in (glyph.source, *glyph.candidates)]
+    extra = [label for label in dict.fromkeys(used) if label not in order]
     fonts: dict[str, str] = {}
     family_names: dict[str, str] = {}
-    for label in order:
+    for label in (*order, *extra):
         family = library.family(label)
         reference = family.regular_style() if family is not None else None
         if family is not None and reference is not None:
@@ -626,11 +813,12 @@ def _composition_payload(
         "atomic": group.atomic,
         "total": group.total,
         "order": order,
+        "extra": extra,
         "fonts": fonts,
         "familyNames": family_names,
         "glyphs": glyphs,
         "missing": composition.missing,
-        "contributions": composition.contributions(order),
+        "contributions": composition.contributions([*order, *extra]),
         "invalidOverrides": [
             {"codepoint": item.codepoint, "family": item.family, "reason": item.reason}
             for item in composition.invalid_overrides
@@ -640,17 +828,17 @@ def _composition_payload(
 
 def _style_map(
     library: FontLibrary,
-    choices: dict[str, list[str]],
+    orders: Iterable[Sequence[str]],
     styles: list[str],
     configured: tuple[dict[str, dict[str, str]], dict[str, str]],
 ) -> dict[str, Any]:
-    """Resolve every output style for every family that is used by some group.
+    """Resolve every output style for every family that is used by some group or pin.
 
     ``configured`` is the ``[styles.<Output>]`` files and the custom style names.
     """
     overrides, names = configured
     used: list[str] = []
-    for order in choices.values():
+    for order in orders:
         for label in order:
             if label not in used and library.family(label) is not None:
                 used.append(label)

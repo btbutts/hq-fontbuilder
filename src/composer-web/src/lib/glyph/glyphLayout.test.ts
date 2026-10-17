@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { chooserGrid, layoutCells, type LayoutCell } from './glyphLayout.ts';
 
+const ALNUM_ROWS = [{ label: '0-9', low: 0x30, high: 0x39 }, { label: 'A-Z', low: 0x41, high: 0x5a }, { label: 'a-z', low: 0x61, high: 0x7a }];
+
 function cells(...ranges: [number, number][]): LayoutCell[] {
 	const out: LayoutCell[] = [];
 	for (const [low, high] of ranges) {
@@ -11,13 +13,13 @@ function cells(...ranges: [number, number][]): LayoutCell[] {
 }
 
 test('alnum is stacked: digits, capitals, lower case, columns aligned', () => {
-	const rows = layoutCells('alnum', cells([0x30, 0x39], [0x41, 0x5a], [0x61, 0x7a]), 'rows');
+	const rows = layoutCells(ALNUM_ROWS, cells([0x30, 0x39], [0x41, 0x5a], [0x61, 0x7a]), 'rows');
 	assert.deepEqual(
 		rows.map((row) => [row.label, row.cells.length]),
 		[
-			['0–9', 10],
-			['A–Z', 26],
-			['a–z', 26]
+			['0-9', 10],
+			['A-Z', 26],
+			['a-z', 26]
 		]
 	);
 	assert.equal(rows[0]?.cells[0]?.codepoint, 0x30);
@@ -27,7 +29,7 @@ test('alnum is stacked: digits, capitals, lower case, columns aligned', () => {
 
 test('wrap mode is one unlabelled run', () => {
 	const all = cells([0x30, 0x39], [0x41, 0x5a]);
-	const rows = layoutCells('alnum', all, 'wrap');
+	const rows = layoutCells(ALNUM_ROWS, all, 'wrap');
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0]?.label, null);
 	assert.equal(rows[0]?.cells.length, 36);
@@ -35,7 +37,7 @@ test('wrap mode is one unlabelled run', () => {
 
 test('other groups are cut in rows of 16 by code point, holes kept as spacers', () => {
 	// Box drawing starts on a row boundary; U+25A0 block misses its first two code points.
-	const rows = layoutCells('geometric', cells([0x25a2, 0x25bf]), 'rows');
+	const rows = layoutCells([], cells([0x25a2, 0x25bf]), 'rows');
 	assert.deepEqual(
 		rows.map((row) => row.label),
 		['U+25A_', 'U+25B_']
@@ -49,7 +51,7 @@ test('other groups are cut in rows of 16 by code point, holes kept as spacers', 
 });
 
 test('trailing holes are trimmed and five-digit code points keep their row label', () => {
-	const rows = layoutCells('nerd-icons', cells([0xf0000, 0xf0002]), 'rows');
+	const rows = layoutCells([], cells([0xf0000, 0xf0002]), 'rows');
 	assert.deepEqual(rows[0]?.label, 'U+F000_');
 	assert.equal(rows[0]?.cells.length, 3);
 });

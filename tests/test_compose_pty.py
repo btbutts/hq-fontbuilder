@@ -141,11 +141,13 @@ def test_header_tail_window_reload_and_quit(tmp_path: Path) -> None:
     try:
         session.read_until("Press 'Q' to quit or 'R' to Reload")
         for index in range(REQUESTS):
-            session.get(f"/api/glyphs?family=Alpha&group=arrows&n={index}")
+            session.get(f"/api/state?n={index}")
             session.get("/api/version")  # the page's poll: never shown
         session.read_until(f"n={REQUESTS - 1} HTTP")
         time.sleep(0.4)  # let the last redraw land
         screen = _screen(session.output)
+        screen = screen[next(i for i, line in enumerate(screen)
+                             if line.startswith("The font_composer console")):]
         url = f"http://localhost:{session.port}/"
         assert screen[0] == f"The font_composer console is reachable at: {url}"
         # a line too long for the terminal has its tab expanded (and its middle cut)

@@ -12,6 +12,7 @@
 		type GroupInfo
 	} from '#lib/data/api.js';
 	import { consoleStore } from '#lib/data/console.svelte.js';
+	import { overlayStore } from '#lib/data/overlay.svelte.ts';
 	import CtrlButton from '#lib/button/CtrlButton.svelte';
 	import { installFontFaces } from '#lib/glyph/families.js';
 	import { clippedCount } from '#lib/glyph/fitDisplay.js';
@@ -40,7 +41,7 @@
 	const group = $derived(snapshot?.groups.find((entry) => entry.id === groupId));
 	const family = $derived(snapshot?.families.find((entry) => entry.label === familyLabel));
 
-	const order = $derived(snapshot?.choices[groupId] ?? []);
+	const order = $derived(group ? overlayStore.orderOf(group, snapshot) : []);
 	const position = $derived(order.indexOf(familyLabel));
 	const base = $derived(snapshot?.base ?? null);
 
@@ -193,8 +194,14 @@
 	let confirmClear = $state(false);
 
 	async function change(action: 'add' | 'remove' | 'clear'): Promise<void> {
-		const result = await postChoose(groupId, action, action === 'clear' ? null : familyLabel);
+		const result = await postChoose(
+			groupId,
+			action,
+			action === 'clear' ? null : familyLabel,
+			group?.overlay ? order : undefined
+		);
 		chooseError = result.ok ? null : (result.error ?? 'unknown error');
+		if (result.ok && group?.overlay && result.order) overlayStore.setOrder(groupId, result.order);
 		await consoleStore.refresh();
 	}
 
@@ -236,7 +243,7 @@
 
 <PageHeader>
 	<div class="flex items-center justify-between gap-4">
-		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>Coverage Table</CtrlButton>
+		<CtrlButton function="nav.BACK" onclick={() => goto('/', { reset: false })}>Coverage Table</CtrlButton>
 		<div class="flex items-center gap-4">
 			<ThemeToggle />
 			{#if snapshot !== null && group && family && order.length > 0}
@@ -261,7 +268,7 @@
 		{@const nameFirst = words[0]}
 		{@const nameLast = words.length > 1 ? words[words.length - 1] : ''}
 		{@const nameMiddle = words.slice(1, -1).join(' ')}
-		{@const categoryName = `— ${group.id}${group.atomic ? ' (atomic)' : ''}`}
+		{@const categoryName = `— ${group.label}${group.atomic ? ' (atomic)' : ''}`}
 		<!--
 			The status stands right of the title, on the title's line, and the line never wraps, so
 			the circle never moves. When the line is too narrow, things give way in this order:
@@ -328,7 +335,7 @@
 {#if snapshot !== null && group && family}
 	{#snippet useToggle()}
 		<Toggle
-			label="Use this Font Family for the {group.id} Group"
+			label="Use this Font Family for the {group.label} Group"
 			checked={position >= 0}
 			onchange={(enabled) => change(enabled ? 'add' : 'remove')}
 		/>
@@ -369,7 +376,8 @@
 	<div class="overflow-x-auto pb-4">
 
 	{#each family.styles as style, index (style.file)}
-		{@const [present, total] = style.coverage[groupId] ?? [0, group.total]}
+		{@const present = currentGlyphs?.styles[style.file]?.length ?? 0}
+		{@const total = group.total}
 		<section class={layoutMode === 'rows' ? 'w-max min-w-full' : ''}>
 			<div class="sticky left-0 w-fit max-w-[min(64rem,calc(100vw-4rem))]">
 				<h3 class="mt-4 mb-0.5 text-[1rem] font-semibold">{style.file} — {style.style}</h3>
@@ -393,7 +401,7 @@
 						<p class="m-0 text-[14px] {colors.textError}">this style holds no glyph of this group</p>
 					{:else}
 						<GlyphGrid
-							groupId={group.id}
+							namedRows={group.rows}
 							{cells}
 							mode={layoutMode}
 							fontFamily="fc-style-{index}"

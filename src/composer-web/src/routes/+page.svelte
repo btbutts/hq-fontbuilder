@@ -1,8 +1,13 @@
 <script lang="ts">
+	import { afterNavigate, beforeNavigate } from '$app/navigation';
+	import { tick } from 'svelte';
 	import IconEqualNot from '@tabler/icons-svelte/icons/equal-not';
 	import CtrlButton from '#lib/button/CtrlButton.svelte';
 	import PeekButton from '#lib/button/PeekButton.svelte';
 	import { consoleStore } from '#lib/data/console.svelte.ts';
+	import { recalledScroll, rememberScroll } from '#lib/data/mainScroll.ts';
+	import { overlayStore } from '#lib/data/overlay.svelte.ts';
+	import SelectGlyphCategories from '#lib/modal/SelectGlyphCategories.svelte';
 	import StyleMappingModal from '#lib/modal/StyleMappingModal.svelte';
 	import { colors } from '#lib/styles.svelte.ts';
 	import ThemeToggle from '#lib/toggle/ThemeToggle.svelte';
@@ -13,6 +18,45 @@
 	let notesOpen = $state(false);
 
 	const snapshot = $derived(consoleStore.state);
+
+	// Leaving for a category's page and coming back (the button, or the browser's back)
+	// returns to where the long table was left, down the page and along the table.
+	function tableScroller(): HTMLElement | null {
+		return document.querySelector<HTMLElement>('.fc-col-scroller');
+	}
+
+	beforeNavigate(() => {
+		rememberScroll({
+			x: window.scrollX,
+			y: window.scrollY,
+			tableLeft: tableScroller()?.scrollLeft ?? 0
+		});
+	});
+
+	function restoreScroll(): void {
+		const place = recalledScroll();
+		const scroller = tableScroller();
+		if (scroller) scroller.scrollLeft = place.tableLeft;
+		window.scrollTo(place.x, place.y);
+	}
+
+	let restored = false;
+	$effect(() => {
+		if (snapshot === null || restored) return;
+		restored = true;
+		void tick().then(restoreScroll);
+	});
+
+	afterNavigate(() => requestAnimationFrame(restoreScroll));
+	let showCategories = $state(false);
+
+	const shownSummary = $derived(
+		(snapshot?.summary ?? []).filter((entry) => !overlayStore.isExcluded(entry.group))
+	);
+
+	function groupOf(id: string) {
+		return snapshot?.groups.find((group) => group.id === id);
+	}
 
 	function composeHref(groupId: string): string {
 		return `/compose?${new URLSearchParams({ group: groupId })}`;
@@ -51,8 +95,9 @@
 	>
 		<ul class="min-h-0 list-disc list-outside space-x-2 overflow-hidden pl-9">
 			<li>
-				Click a cell to inspect the Glyph Category for that Font Family and to add the family to the
-				group's inheritance order.
+				Click a cell to inspect the glyphs of that Glyph Category for the Font Family; double-click
+				it to add the Font Family to the Glyph Category's inheritance order, or to remove it when
+				it is already in it.
 			</li>
 			<li>Atomic Glyph Categories are counted as sourced only at 100% coverage and come from one Font Family.</li>
 			<li>
@@ -73,7 +118,14 @@
 {#if snapshot === null}
 	<p class="mt-4 {colors.textSecondary}">{consoleStore.error ?? 'loading…'}</p>
 {:else}
-	<GlyphFontFamilyTable {snapshot} />
+	<GlyphFontFamilyTable {snapshot} oneditcategories={() => (showCategories = true)} />
+	{#if snapshot.groups.length === 0}
+		<p class="mt-4 {colors.textSecondary}">
+			{snapshot.catalogReady
+				? 'No font has glyphs yet: put font files in the fonts directory.'
+				: 'The Unicode block list (Blocks.txt) is not available, so there are no glyph categories.'}
+		</p>
+	{/if}
 
 	<h2 class="mt-8 text-[1.1rem] font-semibold">Composition so far</h2>
 	<p class="mt-0 mb-4 max-w-5xl {colors.textSecondary}">
@@ -93,29 +145,37 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each snapshot.summary as entry (entry.group)}
+			{#each shownSummary as entry (entry.group)}
+				{@const group = groupOf(entry.group)}
+				{@const order = group ? overlayStore.orderOf(group, snapshot) : entry.order}
+				{@const label = group?.label ?? entry.group}
 				<tr>
 					<td class="border px-3 py-1 font-mono whitespace-nowrap {colors.border}">
-						{#if entry.order.length}
+						{#if order.length || entry.covered > 0}
 							<a
 								href={composeHref(entry.group)}
 								class="underline {colors.textAccent1}"
-								{...tip(undefined, `show the combined glyphs of ${entry.group}`)}>{entry.group}</a
+								{...tip(undefined, `show the combined glyphs of ${label}`)}>{label}</a
 							>
 						{:else}
-							{entry.group}
+							{label}
 						{/if}
 					</td>
 					<td class="border px-3 py-1 {colors.border}">
-						{#if entry.order.length}
-							{entry.order.map((label) => consoleStore.nameOf(label)).join(', ')}
+						{#if order.length}
+							{order.map((name) => consoleStore.nameOf(name)).join(', ')}
+							<span class="ml-2 text-[0.85em] {colors.textTertiary}"
+								>{entry.covered}/{entry.total} code points</span
+							>
+						{:else if entry.covered > 0}
+							{Object.keys(entry.sources).map((name) => consoleStore.nameOf(name)).join(', ')}
 							<span class="ml-2 text-[0.85em] {colors.textTertiary}"
 								>{entry.covered}/{entry.total} code points</span
 							>
 						{:else}
 							<span class={colors.textError}>
 								{entry.candidates.length
-									? `unsourced — full coverage: ${entry.candidates.map((label) => consoleStore.nameOf(label)).join(', ')}`
+									? `unsourced — full coverage: ${entry.candidates.map((name) => consoleStore.nameOf(name)).join(', ')}`
 									: 'unsourced — no family covers this group fully'}
 							</span>
 						{/if}
@@ -137,4 +197,8 @@
 
 {#if showStyleMapping}
 	<StyleMappingModal onclose={() => (showStyleMapping = false)} />
+{/if}
+
+{#if showCategories}
+	<SelectGlyphCategories onclose={() => (showCategories = false)} />
 {/if}

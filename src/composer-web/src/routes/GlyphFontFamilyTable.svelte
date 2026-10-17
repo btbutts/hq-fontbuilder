@@ -1,6 +1,12 @@
 <script lang="ts">
+	import IconEditBulk from '@tabler/icons-svelte/icons/edit-bulk';
 	import IconEqualNot from '@tabler/icons-svelte/icons/equal-not';
-	import type { ComposerState, FamilyInfo } from '#lib/data/api.ts';
+	import BareIconButton from '#lib/button/BareIconButton.svelte';
+	import { overlayStore } from '#lib/data/overlay.svelte.ts';
+	import { goto } from '$app/navigation';
+	import { onDestroy } from 'svelte';
+	import { postChoose, type ComposerState, type FamilyInfo, type GroupInfo } from '#lib/data/api.ts';
+	import { consoleStore } from '#lib/data/console.svelte.ts';
 	import { colors } from '#lib/styles.svelte.ts';
 	import { ColumnOrder } from '#lib/table/columnOrder.svelte.ts';
 	import ReorderableColumns from '#lib/table/ReorderableColumns.svelte';
@@ -8,9 +14,12 @@
 
 	interface Props {
 		snapshot: ComposerState;
+		oneditcategories: () => void;
 	}
 
-	let { snapshot }: Props = $props();
+	let { snapshot, oneditcategories }: Props = $props();
+
+	const rows = $derived(snapshot.groups.filter((group) => !overlayStore.isExcluded(group.id)));
 
 	interface FamilyColumn {
 		id: string;
@@ -46,12 +55,59 @@
 		const params = new URLSearchParams({ family: familyLabel, group: groupId });
 		return `/group?${params}`;
 	}
+
+	let error = $state<string | null>(null);
+
+	async function toggleFamily(group: GroupInfo, family: FamilyInfo): Promise<void> {
+		const order = overlayStore.orderOf(group, snapshot);
+		const result = await postChoose(
+			group.id,
+			order.includes(family.label) ? 'remove' : 'add',
+			family.label,
+			group.overlay ? order : undefined
+		);
+		error = result.ok ? null : (result.error ?? 'unknown error');
+		if (result.ok && group.overlay && result.order) overlayStore.setOrder(group.id, result.order);
+		await consoleStore.refresh();
+	}
+
+	// A click opens the cell's page once no second click follows within OPEN_DELAY_MS; a
+	// double click instead adds the family to the category's order, or takes it out when it
+	// is in it. A keyboard activation (no click count) opens the page at once, and a
+	// modified click is left to the browser (a new tab).
+	const OPEN_DELAY_MS = 350;
+	let pendingOpen: ReturnType<typeof setTimeout> | undefined;
+
+	function cancelPendingOpen(): void {
+		clearTimeout(pendingOpen);
+		pendingOpen = undefined;
+	}
+
+	onDestroy(cancelPendingOpen);
+
+	function onCellClick(event: MouseEvent, group: GroupInfo, family: FamilyInfo): void {
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) {
+			return;
+		}
+		event.preventDefault();
+		if (event.detail > 1) return;
+		cancelPendingOpen();
+		const href = groupHref(family.label, group.id);
+		if (event.detail === 0) void goto(href);
+		else pendingOpen = setTimeout(() => void goto(href), OPEN_DELAY_MS);
+	}
+
+	function onCellDoubleClick(event: MouseEvent, group: GroupInfo, family: FamilyInfo): void {
+		event.preventDefault();
+		cancelPendingOpen();
+		void toggleFamily(group, family);
+	}
 </script>
 
 <div class="mt-4">
 	<ReorderableColumns
 		{columns}
-		rows={snapshot.groups}
+		{rows}
 		label={(column) => column.family.displayName}
 		onreorder={(ids) => order.set(ids)}
 		bind:locked={order.locked}
@@ -60,12 +116,19 @@
 		{#snippet fixedHeader(lockButton)}
 			<div class="flex items-center justify-between gap-3 border px-2 py-1 font-semibold whitespace-nowrap {colors.border} {colors.quietControlBackground}">
 				Group
-				{@render lockButton()}
+				<span class="flex items-center gap-2">
+					<BareIconButton
+						icon={IconEditBulk}
+						label="choose which glyph categories are shown"
+						onclick={oneditcategories}
+					/>
+					{@render lockButton()}
+				</span>
 			</div>
 		{/snippet}
 		{#snippet fixedCell(group)}
 			<div class="border-r border-b border-l px-2 py-1 text-left font-mono whitespace-nowrap {colors.border} {colors.pageBackground}">
-				{group.id}{#if group.atomic}<span class="text-[0.8em] {colors.textAccent2}"> atomic</span>{/if}
+				{group.label}{#if group.atomic}<span class="text-[0.8em] {colors.textAccent2}"> atomic</span>{/if}
 			</div>
 		{/snippet}
 		{#snippet header({ family }, handle)}
@@ -79,17 +142,25 @@
 		{/snippet}
 		{#snippet cell({ family }, group)}
 			{@const [present, total] = snapshot.coverage[family.label]?.[group.id] ?? [0, group.total]}
-			{@const position = (snapshot.choices[group.id] ?? []).indexOf(family.label)}
+			{@const position = overlayStore.orderOf(group, snapshot).indexOf(family.label)}
 			{@const uneven = snapshot.uneven[family.label]?.includes(group.id) ?? false}
 			<div class="border-r border-b p-0 text-center whitespace-nowrap {colors.border}">
 				<a
 					href={groupHref(family.label, group.id)}
-					class="relative block px-2 py-1 no-underline transition-[box-shadow,background-color,transform] duration-150 ease-out hover:z-10 hover:scale-[1.03] focus-visible:z-10 focus-visible:scale-[1.03] motion-reduce:transition-none motion-reduce:hover:scale-100 {cellClasses(present, total, position >= 0)} {position >= 0 ? 'font-semibold' : ''}"
+					onclick={(event) => onCellClick(event, group, family)}
+					ondblclick={(event) => onCellDoubleClick(event, group, family)}
+					class="relative block px-2 py-1 no-underline select-none transition-[box-shadow,background-color,transform] duration-150 ease-out hover:z-10 hover:scale-[1.03] focus-visible:z-10 focus-visible:scale-[1.03] motion-reduce:transition-none motion-reduce:hover:scale-100 {cellClasses(present, total, position >= 0)} {position >= 0 ? 'font-semibold' : ''}"
 					{...tip(
 						`${family.displayName} — ${group.label}`,
 						[
 							`${present} of ${total} code points`,
-							position >= 0 ? `number ${position + 1} in the inheritance order` : null,
+							position >= 0
+								? `number ${position + 1} in the inheritance order`
+								: 'not in the inheritance order',
+							'click to open its glyphs',
+							position >= 0
+								? 'double-click to remove it from the inheritance order'
+								: 'double-click to add it to the inheritance order',
 							uneven ? 'its styles hold different glyphs of this group' : null
 						]
 							.filter((line) => line !== null)
@@ -102,3 +173,6 @@
 		{/snippet}
 	</ReorderableColumns>
 </div>
+{#if error}
+	<p class="mt-2 mb-0 {colors.textError}">{error}</p>
+{/if}

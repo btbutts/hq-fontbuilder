@@ -13,7 +13,7 @@
  * Pure functions, no DOM: `glyphLayout.test.ts` exercises them with `node --test`.
  */
 
-import type { FitInfo } from '../data/api';
+import type { FitInfo, NamedRow } from '../data/api';
 
 /**
  * A group up to this size is drawn whole, absent code points as hatched cells. A larger
@@ -79,21 +79,6 @@ export function slotWidth(geometry: CellGeometry): number {
 	return Math.max(MIN_SLOT_PX, Math.round(geometry.cellW * geometry.emPx) + SLOT_PADDING_PX);
 }
 
-interface NamedRow {
-	label: string;
-	low: number;
-	high: number;
-}
-
-/** Groups whose natural rows are not 16 code points wide. */
-const NAMED_ROWS: Record<string, NamedRow[]> = {
-	alnum: [
-		{ label: '0–9', low: 0x30, high: 0x39 },
-		{ label: 'A–Z', low: 0x41, high: 0x5a },
-		{ label: 'a–z', low: 0x61, high: 0x7a }
-	]
-};
-
 const ROW_WIDTH = 16;
 
 function hex(codepoint: number): string {
@@ -120,7 +105,7 @@ function hexRows(cells: LayoutCell[]): LayoutRow[] {
 		});
 }
 
-function namedRows(rows: NamedRow[], cells: LayoutCell[]): LayoutRow[] {
+function namedRows(rows: readonly NamedRow[], cells: LayoutCell[]): LayoutRow[] {
 	return rows
 		.map((row) => ({
 			label: row.label,
@@ -130,10 +115,13 @@ function namedRows(rows: NamedRow[], cells: LayoutCell[]): LayoutRow[] {
 }
 
 /** Arrange `cells` (in code point order) for a group in the given mode. */
-export function layoutCells(groupId: string, cells: LayoutCell[], mode: LayoutMode): LayoutRow[] {
+export function layoutCells(
+	named: readonly NamedRow[],
+	cells: LayoutCell[],
+	mode: LayoutMode
+): LayoutRow[] {
 	if (mode === 'wrap') return [{ label: null, cells }];
-	const named = NAMED_ROWS[groupId];
-	return named ? namedRows(named, cells) : hexRows(cells);
+	return named.length > 0 ? namedRows(named, cells) : hexRows(cells);
 }
 
 /** Most tiles in one row of the pop-up that chooses the family of a glyph. */

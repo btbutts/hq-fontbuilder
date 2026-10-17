@@ -8,6 +8,7 @@ is cached by ``(file, size, mtime, group)``.
 from __future__ import annotations
 
 import unicodedata
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,32 +20,41 @@ from font_composer.common.fit import (
     CellSpec,
     ClassFit,
     FitPlan,
+    class_blocks,
     class_fit,
-    class_groups,
     fit_class,
+    is_joined,
     overflow_of,
     plan_fit,
     plan_in_class,
 )
-from font_composer.common.groups import GROUPS_BY_ID
 from font_composer.common.ink import read_ink
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from font_composer.common.groups import GlyphGroup
+    from font_composer.common.groups import Catalog, GlyphGroup
     from font_composer.common.library import Family, StyleEntry
+
+
+@dataclass(frozen=True)
+class FitTarget:
+    """What donor glyphs are fitted to: the base cell, and the catalog that names the classes."""
+
+    base: CellSpec
+    catalog: Catalog
 
 
 @lru_cache(maxsize=512)
 def _group_ink(
-    path: str, size: int, mtime_ns: int, group_id: str,
+    path: str, size: int, mtime_ns: int, ranges: tuple[tuple[int, int], ...],
 ) -> tuple[dict[int, Box], Box | None]:
-    """Read one font file's ink for one group (cached by file, size, mtime and group)."""
+    """Read one font file's ink for some code point ranges (cached by file and ranges)."""
     del size, mtime_ns  # part of the cache key only
+    points = frozenset(cp for low, high in ranges for cp in range(low, high + 1))
     try:
-        return read_ink(Path(path), GROUPS_BY_ID[group_id].codepoint_set)
-    except (OSError, ValueError, KeyError):
+        return read_ink(Path(path), points)
+    except (OSError, ValueError):
         return {}, None
 
 
@@ -62,24 +72,30 @@ def ink_of(style: StyleEntry, group: GlyphGroup) -> tuple[dict[int, Box], Box | 
         stat = path.stat()
     except OSError:
         return {}, None
-    return _group_ink(str(path), stat.st_size, stat.st_mtime_ns, group.id)
+    return _group_ink(str(path), stat.st_size, stat.st_mtime_ns, group.ranges)
 
 
-def class_fit_of(family: Family, name: str, base: CellSpec) -> ClassFit | None:
+def class_fit_of(
+    family: Family, name: str, base: CellSpec, catalog: Catalog, block_id: str,
+) -> ClassFit | None:
     """Find the shared scale of a family's glyphs in one category class.
 
     It is taken from the family's reference style over every glyph the family has in the
-    class, so it does not depend on which families a group inherits from, and every style
-    of the family gets the same one.
+    class (the block ``block_id`` itself, for a class of one block), so it does not depend
+    on which families a group inherits from, and every style of the family gets the same
+    one. The pieces that join their neighbours are not part of it: they are not scaled.
     """
     reference = family.regular_style()
     if reference is None:
         return None
     inks: list[Box] = []
     frame = None
-    for group_id in class_groups(name):
-        boxes, frame = ink_of(reference, GROUPS_BY_ID[group_id])
-        inks.extend(boxes.values())
+    for member in class_blocks(name, block_id):
+        block = catalog.by_id(member)
+        if block is None:
+            continue
+        boxes, frame = ink_of(reference, block)
+        inks.extend(box for codepoint, box in boxes.items() if not is_joined(codepoint))
     if name == "connectors" and frame is not None:
         # Box lines may run past the full block on purpose, so that neighbours overlap
         # (Fira Code's by 0.2 em); the renderer cuts them at the cell. The family is
@@ -144,26 +160,30 @@ def _plan_connectors(
 
 def plan_glyphs(
     family: Family, group: GlyphGroup, style: StyleEntry, codepoints: Iterable[int],
-    base: CellSpec,
+    target: FitTarget,
 ) -> dict[int, FitPlan]:
     """Plan the fit of some glyphs of one style file onto the base cell.
 
-    A glyph of a category fitted together (text, box drawing) always gets the shared
-    scale of its family; any other is returned only when it is not simply inside.
+    Every glyph is of a category fitted together (text, symbols, box drawing) and gets
+    the shared scale of its family, in proportion; one that is not scaled and fits is left
+    out. Only the pieces that join their neighbours are fitted to the cell, one by one.
     """
+    base = target.base
     ink, frame = ink_of(style, group)
     donor = cell_of(style)
-    name = fit_class(group.id)
+    name = fit_class(group.block)
     if name == "connectors":
         return _plan_connectors(ink, frame, donor, base, codepoints)
-    shared = class_fit_of(family, name, base) if name is not None else None
+    shared = class_fit_of(family, name, base, target.catalog, group.block)
     plans: dict[int, FitPlan] = {}
     for codepoint in codepoints:
-        if shared is not None:
-            plans[codepoint] = plan_in_class(ink.get(codepoint), shared, base)
-            continue
-        letter = unicodedata.category(chr(codepoint))[0] in "LM"
-        plan = plan_fit(ink.get(codepoint), donor, frame, base, on_baseline=letter)
+        if is_joined(codepoint) or shared is None:
+            letter = unicodedata.category(chr(codepoint))[0] in "LM"
+            plan = plan_fit(ink.get(codepoint), donor, frame, base, on_baseline=letter)
+        else:
+            plan = plan_in_class(ink.get(codepoint), shared, base)
+            if name == "symbols" and plan.identity and plan.overflow <= EPS:
+                continue
         if plan.kind != "fits":
             plans[codepoint] = plan
     return plans

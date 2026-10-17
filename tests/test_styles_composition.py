@@ -8,7 +8,7 @@ import pytest
 from support import FontSpec, NameSpec, build_font
 
 from font_composer.common.composition import resolve_group
-from font_composer.common.groups import GROUPS_BY_ID
+from font_composer.common.groups import GlyphGroup
 from font_composer.common.library import FontLibrary
 from font_composer.common.styles import (
     parse_style_name,
@@ -20,7 +20,7 @@ from font_composer.common.styles import (
 if TYPE_CHECKING:
     from pathlib import Path
 
-PUNCTUATION = GROUPS_BY_ID["punctuation"]
+PUNCTUATION = GlyphGroup("punctuation", "General Punctuation", ((0x2000, 0x209F),))
 
 
 def _family_dir(root: Path, label: str, styles: list[tuple[str, int, bool]],

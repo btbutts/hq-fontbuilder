@@ -23,7 +23,7 @@ The two components map to two commands:
 * **`build` — the font-builder.** Reads the `.toml` config and writes one TTF per
   requested style, plus a `NOTICE` file (see "Building the fonts" below).
 
-A third command, **`inspect`**, prints one font's metadata and per-group coverage on
+A third command, **`inspect`**, prints one font's metadata and per-block coverage on
 the command line — the quick way to reproduce the coverage measurements for any file.
 
 ## _The fonts directory convention_
@@ -67,7 +67,7 @@ It is idempotent — re-running it only does what is missing. The two steps are 
 available on their own: `./compile-spa.sh` recompiles just the web console (run it
 after editing anything in `src/composer-web/`).
 
-Inspect a font (metadata, fixed-width judgement, per-group coverage):
+Inspect a font (metadata, fixed-width judgement, per-block coverage):
 
 ```sh
 .fontbuilder.venv/bin/python -m font_composer inspect fonts/DejaVu/DejaVuSansMono.ttf
@@ -123,16 +123,32 @@ message: pick another with `--port`, or drop `--port` to have one chosen.
 
 In the console:
 
-* The **coverage table** has one row per glyph group and one column per family; a cell
+* The **coverage table** has one row per glyph category and one column per family; a cell
   shows `present/total` and is green when complete, amber when partial, grey when
   empty. The numbers are those of the family's *reference style*, the upright cut
   nearest Regular (not a union over all its files: a composed style takes its glyphs
   from one file, so a union would claim glyphs no single file holds). `≠` marks a group
-  on which the family's styles hold different glyphs. `box-drawing` and
-  `block-elements` are *atomic*: they only count as sourced at 100%. The outlined cell
+  on which the family's styles hold different glyphs. `Box Drawing` and
+  `Block Elements` are *atomic*: they only count as sourced at 100%. The outlined cell
   is the family currently chosen for that group.
-* **Click a cell** to open the group page: every style of the family, every code point
-  of the group, drawn by the font itself in a box the size of the base family's cell.
+* The categories are the **Unicode blocks** of the Unicode Character Database's
+  `Blocks.txt` (downloaded to `src/char-sets/` with the names list the first time it is
+  needed, never committed), and the table lists only those in which at least one family
+  has a glyph. The button left of the lock in the "Group" header opens **Select Glyph
+  Categories**: hide the categories you do not need (this only hides the row; the build
+  still honours the choices made in it), see in how many fonts each has glyphs (hover the
+  count for the number per family), and switch the **simplified Glyph Category overlay**
+  on or off. The overlay is on by default. It shows three categories of its own in place
+  of the part of a block they cut out: ASCII letters and digits and other printable ASCII
+  (Basic Latin), and Powerline (Private Use Area); the dialog marks them `overlay`. The
+  overlay exists only in the console. What you choose in one of its categories is written
+  as one pin per code point to `[generated_glyphs]`, under the official block name
+  everything else uses; the order of an overlay category is kept by the browser, or in
+  `[overlay_orders]` when you switch on **Store Overlay Categories in toml config**. The
+  build never reads the overlay.
+* **Click a cell** to open the group page (after a moment, once no second click follows;
+  focusing a cell and pressing Enter opens it at once): every style of the family, every
+  code point of the group, drawn by the font itself in a box the size of the base family's cell.
   The box is the cell a console would give the glyph (width = the base family's
   advance, height = its ascent + descent), the dashed red line is the baseline, and
   the glyph's origin is the cell's left edge, as in a terminal, so a donor whose advance
@@ -141,9 +157,15 @@ In the console:
   A code point the font does not have is a hatched cell, never a glyph borrowed from
   another font. Groups of more than 512 code points (Nerd Font private use) draw only
   the glyphs a style holds, 256 at a time.
+* **Double-click a cell** to add that family to the category's inheritance order, or to take
+  it out when it is already in it (an atomic category refuses a family that does not cover
+  it completely, and says so under the table). The **Coverage Table** button of the group
+  page, and the browser's back button, return to the table at the place you left it, down
+  the page and along the table.
 * **Layout.** By default the cells are stacked in rows that never wrap and are
-  left-aligned, so a column means the same thing in every row and every style: `alnum`
-  is digits, then capitals, then lower case; any other group is cut in rows of 16 by code
+  left-aligned, so a column means the same thing in every row and every style: the ASCII
+  letters and digits category
+  is digits, then capitals, then lower case; any other category is cut in rows of 16 by code
   point, like the Unicode charts (the row label is `U+25A_`, the column is the last hex
   digit). The page scrolls sideways when a row is wider than the window. The
   **Enable glyph wrapping** switch at the top right of the page gives one wrapping run
@@ -155,7 +177,7 @@ In the console:
   families one after the other: the first is the group's first choice, and each following
   one fills in the code points the earlier ones have no glyph for. A code point that
   several families have is taken from the first of them. Every change is written to
-  `font_composer.toml` immediately. Atomic groups (`box-drawing`, `block-elements`) take one
+  `font_composer.toml` immediately. Atomic categories (`Box Drawing`, `Block Elements`) take one
   family only, and a complete one.
 * The **Composition so far** table at the bottom of the main page has one row per glyph
   category (`Glyph Categories`) and its families in order (`Font Inheritance Order`),
@@ -201,13 +223,23 @@ dir = "fonts"                      # where the source fonts are (compose --fonts
 base = "FiraCode"                  # family that defines the cell: advance, ascent, descent
 fit = "base"
 
-[groups]                           # written by the console: group -> inheritance order
-alnum = ["FiraCode"]
-punctuation = ["FiraCode", "JetBrainsMono", "DejaVu"]   # first choice first
-arrows = ["DejaVu", "FiraCode"]
+[groups]                           # written by the console: Unicode block -> inheritance order
+"Latin-1 Supplement" = ["FiraCode"]
+"General Punctuation" = ["FiraCode", "JetBrainsMono", "DejaVu"]   # first choice first
+Arrows = ["DejaVu", "FiraCode"]
 
 [glyphs]                           # written by the console: code points pinned to a family
 "U+2714" = { family = "DejaVu" }   # (a bare string works too: "U+2714" = "DejaVu")
+
+# Written by the console from the category overlay; the first family serves the glyph and
+# the others are the fallbacks of a style file that lacks it. Do not edit this table.
+[generated_glyphs]
+"U+0041" = ["FiraCode", "JetBrainsMono"]
+
+# Optional (Select Glyph Categories > Store Overlay Categories in toml config): the orders
+# of the overlay categories, for other browsers. The build ignores it.
+[overlay_orders]
+"overlay:ascii-alnum" = ["FiraCode", "JetBrainsMono"]
 
 [styles.Bold]                      # written by the console: which file serves an output style
 DejaVu = "DejaVuSansMono-Bold.ttf" # (a style name such as "Bold" is accepted too)
@@ -219,8 +251,9 @@ port = 8710
 # are fitted to the cell).
 ```
 
-`[groups]` still accepts a plain string for a group (`alnum = "FiraCode"` is a list of
-one). TOML was kept for the file: it has ordered arrays, comments and inline tables, and
+`[groups]` still accepts a plain string for a block (`Arrows = "DejaVu"` is a list of
+one). Group ids of earlier versions (`arrows`, `alnum`, `latin-ext-b` ...) are not block
+names and are ignored: rebuild the choices with the block names. TOML was kept for the file: it has ordered arrays, comments and inline tables, and
 the console and a human edit the same file.
 
 ### Glyphs that do not fit the cell
@@ -231,27 +264,33 @@ show the glyphs **fitted** by default. Turn on **Preview unfitted glyphs** to se
 donor's originals: the cells the base cell cuts off are outlined red, and each style says
 how many. The rules are in `font_composer/common/fit.py` (pure functions, tested).
 
-Two ways of fitting, by category:
+Every Unicode block is fitted **together, as a category**, and never stretched:
 
-* **Fitted together by category** (`text`: alnum, ascii-symbols, latin-*, greek, cyrillic;
-  `connectors`: box-drawing, block-elements). Shrinking only the glyph that offends would
-  make it smaller than its look-alikes (`ĺ` against `ľ`, one box corner against the
-  next), so one family's glyphs of a category get **one scale**, just enough for its
-  offenders, applied to all of them about a fixed anchor (the baseline for text; the
-  centre of the donor's frame for box drawing, so they keep lining up), plus the least
-  extra shift or shrink a glyph still needs. The scale has a floor (5% for text, 25% for
-  box drawing: `CLASS_FLOORS`), so that a handful of outliers, such as an accented Greek
+* **One scale per category** (`text`: Basic Latin, Latin-1 Supplement, Latin Extended-A, -B
+  and Additional, Greek and Coptic, Cyrillic; `connectors`: Box Drawing, Block Elements;
+  `symbols`: every other block, each by itself: arrows, mathematics, punctuation,
+  dingbats, icons, ...). Shrinking only the glyph that offends would make it smaller
+  than its look-alikes (`ĺ` against `ľ`, one box corner against the next), so one
+  family's glyphs of a category get **one scale in both directions**, just enough for its
+  offenders, applied to all of them about a fixed anchor (the baseline and the horizontal
+  middle of the cell for text and symbols; the centre of the donor's frame for box
+  drawing, so they keep lining up), plus the least extra shift or proportional shrink a
+  glyph still needs. The scale has a floor (5% for text, 10% for symbols, 25% for box
+  drawing: `CLASS_FLOORS`), so that a handful of outliers, such as an accented Greek
   capital taller than any letter, cannot make a whole alphabet visibly smaller; the
-  outliers are fitted on their own. A font that *is* the base cell keeps its box drawing.
-* **Fitted glyph by glyph** (everything else: punctuation, arrows, dingbats, math, ...,
-  whose glyphs differ in size by nature):
+  outliers are fitted on their own, still in proportion. A font that *is* the base cell
+  keeps its box drawing.
+* **Pieces that must join their neighbours** are the one exception, fitted glyph by glyph
+  (`is_joined`: the powerline symbols U+E0A0-U+E0D4, and the pieces of large brackets,
+  braces, integrals and sums, U+2320-2321 and U+239B-23B3):
 
 | Class | What it is | Correction |
 |---|---|---|
+| `category` | any glyph of a category fitted together | the category's one scale, plus what it still needs |
 | `bleed` | past the cell by at most 0.02 em; fonts do it on purpose so neighbours show no seam | kept |
-| `frame` | a connector (box piece, powerline separator, brace or integral piece) designed to span the cell so neighbours join | the donor's frame (or cell) is fitted onto the base cell, one map per font family |
-| `oversize` | a symbol wider or taller than the cell (`↔ ⇔ ⌫ ☑ ❤`) | scaled uniformly to fit |
-| `offset` | fits in size, sits partly outside (another line box, e.g. Nerd Font icons 0.03 em under the descent) | moved the least that brings it inside |
+| `frame` | a piece designed to span the cell so neighbours join | the donor's frame (or cell) is fitted onto the base cell, one map per font family |
+| `oversize` | a joined piece wider or taller than the cell | scaled uniformly to fit |
+| `offset` | fits in size, sits partly outside (another line box) | moved the least that brings it inside |
 
 Connectors that run past the cell on purpose (Fira Code's box lines) are fitted by their
 frame and cut at the cell edge, not shrunk. The preview is a visualisation: it draws each glyph through the plan, but where box
@@ -273,13 +312,13 @@ includes or excludes them; Regular and Bold are included to begin with), named `
 (`Console Mono` becomes `ConsoleMono-Regular.ttf`), and a `NOTICE` file next to them that
 lists every font the result is made of with its copyright and licence text.
 
-* **Where glyphs come from.** Each group's inheritance order and the `[glyphs]` pins decide
+* **Where glyphs come from.** Each block's inheritance order, the generated pins and the `[glyphs]` pins decide
   the donor of a code point (the same resolution the console shows); it is drawn from the
   donor's file for *that output style*, fitted to the base cell by the plan the console
   previews, and given the base cell's advance. Every code point no group serves keeps the
   **base family's own glyph** (so the font is complete, not just the chosen groups). A
   group with more families than one falls back to the next family when a style file lacks
-  a glyph; an atomic group never mixes, and half a box-drawing set refuses the build.
+  a glyph; an atomic group never mixes, and half a Box Drawing set refuses the build.
 * **Box drawing joins.** All box and block glyphs of a donor get one map that puts the
   donor's frame exactly on the base cell; what overshoots on purpose is cut at the cell
   edge. The build then checks that each connector still reaches the edges it was drawn to.

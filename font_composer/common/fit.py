@@ -37,12 +37,16 @@ A family's glyphs of one *category* are also fitted together, because shrinking 
 glyph that offends would make it smaller than its look-alikes (``ĺ`` against ``ľ``).
 :func:`class_fit` finds the one scale that brings the offenders of a category inside the
 cell, :func:`plan_in_class` applies it to every glyph of that category (anchored so that
-glyphs keep their place: the baseline for text, the centre of the frame for box
-drawing) and adds the least extra shift or shrink a glyph still needs. The scale is
+glyphs keep their place: the baseline for text and symbols, the centre of the frame for
+box drawing) and adds the least extra shift or shrink a glyph still needs. The scale is
 floored (``CLASS_FLOORS``): a few outliers, such as an accented Greek capital taller than
 any letter, must not make a whole alphabet visibly smaller; they are fitted on their own.
-Categories that are not fitted together (punctuation, arrows, dingbats ... whose glyphs
-differ in size by nature) use :func:`plan_fit` per glyph.
+Every Unicode block is such a category: the Latin, Greek and Cyrillic ones are ``text``,
+Box Drawing and Block Elements ``connectors``, all the others ``symbols`` (a block each).
+Such a glyph is only ever scaled in proportion, so it never looks stretched or squished.
+The pieces that must meet their neighbours (:func:`is_joined`: powerline separators, the
+parts of braces and integrals) are the one exception: they keep :func:`plan_fit`'s
+stretching fit.
 
 :func:`plan_fit` returns the affine map ``x' = sx*x + dx``, ``y' = sy*y + dy`` that the
 build applies to the outline with a transform pen, and the preview draws with an SVG
@@ -270,27 +274,42 @@ def plan_fit(
 # ---- categories fitted together ------------------------------------------------------
 
 #: The most a whole category may shrink, as a scale. Text may lose 5%: that brings 95-99%
-#: of the letters of the fonts measured inside the cell; box drawing, whose donors draw
-#: on frames up to 1.4 em tall, may lose a quarter.
-CLASS_FLOORS: dict[str, float] = {"text": 0.95, "connectors": 0.75}
+#: of the letters of the fonts measured inside the cell; symbols (arrows, mathematics,
+#: icons ... whose glyphs differ in size by nature) 10%, the rest being fitted alone;
+#: box drawing, whose donors draw on frames up to 1.4 em tall, may lose a quarter.
+CLASS_FLOORS: dict[str, float] = {"text": 0.95, "symbols": 0.9, "connectors": 0.75}
 
-TEXT_GROUPS = ("alnum", "ascii-symbols", "latin-1", "latin-ext", "latin-ext-b",
-               "latin-ext-additional", "greek", "cyrillic")
-CONNECTOR_GROUPS = ("box-drawing", "block-elements")
+TEXT_BLOCKS = ("Basic Latin", "Latin-1 Supplement", "Latin Extended-A", "Latin Extended-B",
+               "Latin Extended Additional", "Greek and Coptic", "Cyrillic")
+CONNECTOR_BLOCKS = ("Box Drawing", "Block Elements")
+#: Code points that must meet their neighbours: the powerline symbols, and the pieces of
+#: large brackets, braces, integrals and sums. They are fitted to the cell, not scaled.
+JOINED_RANGES = ((0xE0A0, 0xE0D4), (0x2320, 0x2321), (0x239B, 0x23B3))
 
 
-def fit_class(group_id: str) -> str | None:
-    """Return the category class a glyph group is fitted in, or None (fitted singly)."""
-    if group_id in TEXT_GROUPS:
+def is_joined(codepoint: int) -> bool:
+    """Tell whether a glyph is a piece that has to reach the edges of its cell."""
+    return any(low <= codepoint <= high for low, high in JOINED_RANGES)
+
+
+def fit_class(block_id: str) -> str:
+    """Return the category class a Unicode block is fitted in: every block is one."""
+    if block_id in TEXT_BLOCKS:
         return "text"
-    if group_id in CONNECTOR_GROUPS:
+    if block_id in CONNECTOR_BLOCKS:
         return "connectors"
-    return None
+    return "symbols"
 
 
-def class_groups(name: str) -> tuple[str, ...]:
-    """Return the ids of the glyph groups that make up a category class."""
-    return TEXT_GROUPS if name == "text" else CONNECTOR_GROUPS
+def class_blocks(name: str, block_id: str) -> tuple[str, ...]:
+    """Return the ids (official names) of the blocks that make up a category class.
+
+    The text blocks share a scale; the connector blocks too; any other block is a class by
+    itself (``block_id``).
+    """
+    if name == "text":
+        return TEXT_BLOCKS
+    return CONNECTOR_BLOCKS if name == "connectors" else (block_id,)
 
 
 @dataclass(frozen=True)
@@ -330,7 +349,7 @@ def _anchors(
     name: str, donor: CellSpec, frame: Box | None, base: CellSpec,
 ) -> tuple[float, float, float, float]:
     """Return ``(from_x, to_x, from_y, to_y)``: the points that stay matched."""
-    if name == "text":
+    if name != "connectors":
         return donor.width / 2, base.width / 2, 0.0, 0.0
     bottom, top = donor.descent, donor.ascent
     if frame is not None and (frame.y1 > top + BLEED or frame.y0 < bottom - BLEED):
@@ -349,9 +368,9 @@ def class_fit(
 ) -> ClassFit:
     """Find the scale of a category class: just enough for its offenders, never below floor.
 
-    Text is anchored on the baseline and free to slide sideways, so only its width and its
-    height above and below the baseline limit it; connectors keep their place relative to
-    the cell, so every edge limits them.
+    Text and symbols are anchored on the baseline and free to slide sideways, so only their
+    width and their height above and below the baseline limit them; connectors keep their
+    place relative to the cell, so every edge limits them.
     """
     from_x, to_x, from_y, to_y = _anchors(name, donor, frame, base)
     cell = base.box
@@ -360,7 +379,7 @@ def class_fit(
         return ClassFit(name, FitPlan("category"), 1.0)
     needed = 1.0
     for ink in inks:
-        if name == "text":
+        if name != "connectors":
             needed = min(needed, cell.width / ink.width if ink.width > 0 else 1.0,
                          _limit((ink.y0, ink.y1), (0.0, 0.0), (cell.y0, cell.y1)))
         else:
@@ -375,8 +394,8 @@ def class_fit(
 def plan_in_class(ink: Box | None, shared: ClassFit, base: CellSpec) -> FitPlan:
     """Plan one glyph of a category: the shared map, plus the least it still needs.
 
-    A text glyph that still leaves the cell slides sideways and, if that is not
-    enough, shrinks about the baseline (so the letter stays on it). A connector gets
+    A text or symbol glyph that still leaves the cell slides sideways and, if that is not
+    enough, shrinks about the baseline, in proportion (so it stays on it). A connector gets
     only the shared map, so that all of them keep lining up.
     """
     plan = shared.plan
@@ -384,7 +403,7 @@ def plan_in_class(ink: Box | None, shared: ClassFit, base: CellSpec) -> FitPlan:
     if ink is None or ink.width <= 0 or ink.height <= 0:
         return FitPlan(kind, plan.sx, plan.sy, plan.dx, plan.dy)
     overflow = overflow_of(ink, base.box)
-    if shared.name == "text" and overflow_of(plan.apply(ink), base.box) > EPS:
+    if shared.name != "connectors" and overflow_of(plan.apply(ink), base.box) > EPS:
         extra = _contain_plan(plan.apply(ink), base, on_baseline=True)
         plan = plan.then(extra)
     return FitPlan(kind, plan.sx, plan.sy, plan.dx, plan.dy, overflow,

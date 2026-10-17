@@ -3,7 +3,8 @@
  * The root layout starts polling; both pages read `store.state` reactively.
  */
 
-import { fetchState, fetchVersion, type ComposerState } from './api';
+import { fetchState, fetchVersion, type ComposerState } from './api.ts';
+import { overlayStore } from './overlay.svelte.ts';
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -22,8 +23,9 @@ class ConsoleStore {
 
 	async refresh(): Promise<void> {
 		try {
-			this.state = await fetchState();
+			this.state = await fetchState(overlayStore.enabled);
 			this.error = null;
+			overlayStore.reconcile(this.state);
 		} catch (cause) {
 			this.error = cause instanceof Error ? cause.message : String(cause);
 		}

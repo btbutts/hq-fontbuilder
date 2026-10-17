@@ -9,6 +9,9 @@ from typing import Any
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 
+from font_composer.common.blocks import parse_blocks
+from font_composer.common.groups import Catalog, build_catalog
+
 
 @dataclass(frozen=True)
 class NameSpec:
@@ -89,3 +92,24 @@ def build_font(
         head.macStyle |= 0x02
     builder.save(path)
     return path
+
+
+SAMPLE_BLOCKS = """\
+0000..007F; Basic Latin
+0080..00FF; Latin-1 Supplement
+2190..21FF; Arrows
+2500..257F; Box Drawing
+2580..259F; Block Elements
+E000..F8FF; Private Use Area
+"""
+
+_SAMPLE_ASSIGNED = ((0x20, 0x7E), (0xA0, 0xFF), (0x2190, 0x21FF), (0x2500, 0x257F),
+                    (0x2580, 0x259F))
+
+
+def sample_catalog() -> Catalog:
+    """Build a small catalog from text: six blocks, with the assigned code points named."""
+    names = {cp: f"CHARACTER {cp:04X}"
+             for low, high in _SAMPLE_ASSIGNED for cp in range(low, high + 1)}
+    names[0] = "<control>"
+    return build_catalog(parse_blocks(SAMPLE_BLOCKS), names)

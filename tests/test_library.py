@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from support import FontSpec, NameSpec, build_font
+from support import FontSpec, NameSpec, build_font, sample_catalog
 
-from font_composer.common.groups import GROUPS_BY_ID
 from font_composer.common.library import REGULAR_WEIGHT, FontLibrary
 from font_composer.composer.state import coverage_matrix, full_coverage_families
 
@@ -46,19 +45,21 @@ def test_family_scan_and_labels(tmp_path: Path) -> None:
 def test_coverage_is_that_of_the_reference_style(tmp_path: Path) -> None:
     """Judge a family by one style file: no union that no single file holds."""
     library = FontLibrary.scan(_make_fonts_dir(tmp_path))
-    matrix = coverage_matrix(library)
-    box_drawing = GROUPS_BY_ID["box-drawing"]
-    # Regular has half of box-drawing and Bold the other half: the family is not
+    catalog = sample_catalog()
+    box_drawing = catalog.by_id("Box Drawing")
+    assert box_drawing is not None
+    matrix = coverage_matrix(library, catalog.blocks)
+    # Regular has half of box drawing and Bold the other half: the family is not
     # complete, although the union of its files would be.
-    assert matrix["Alpha"]["box-drawing"] == (box_drawing.total // 2, box_drawing.total)
-    assert matrix["Beta"]["box-drawing"] == (0, box_drawing.total)
+    assert matrix["Alpha"]["Box Drawing"] == (box_drawing.total // 2, box_drawing.total)
+    assert matrix["Beta"]["Box Drawing"] == (0, box_drawing.total)
     assert full_coverage_families(library, box_drawing) == []
     alpha = library.family("Alpha")
     assert alpha is not None
-    assert alpha.uneven_groups() == {"box-drawing"}
+    assert alpha.uneven_groups(catalog.blocks) == {"Box Drawing"}
     beta = library.family("Beta")
     assert beta is not None
-    assert beta.uneven_groups() == frozenset()
+    assert beta.uneven_groups(catalog.blocks) == frozenset()
 
 
 def test_reference_style_is_the_upright_cut_nearest_regular(tmp_path: Path) -> None:

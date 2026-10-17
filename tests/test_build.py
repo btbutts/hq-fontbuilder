@@ -8,9 +8,10 @@ from typing import Any
 
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
-from support import FontSpec, MetricSpec, NameSpec, build_font
+from support import FontSpec, MetricSpec, NameSpec, build_font, sample_catalog
 
 from font_composer.builder.build import BuildOptions, run_build
+from font_composer.common.groups import build_catalog
 
 ARROW_LEFT, ARROW_UP, BOX_VERTICAL, FULL_BLOCK = 0x2190, 0x2191, 0x2502, 0x2588
 REGULAR_WEIGHT = 400
@@ -54,14 +55,15 @@ def _bounds(font: TTFont, codepoint: int) -> tuple[float, float, float, float] |
 def _build(tmp_path: Path, config: Path, fonts: Path, on_missing: str = "fail") -> tuple[int, str]:
     lines: list[str] = []
     status = run_build(BuildOptions(config, fonts, tmp_path / "out", on_missing),
-                       say=lines.append, ask=lambda _prompt: "", interactive=False)
+                       say=lines.append, ask=lambda _prompt: "", interactive=False,
+                       catalog=sample_catalog())
     return status, "\n".join(lines)
 
 
 def test_a_group_is_drawn_from_its_donor_and_the_rest_stays_the_base(tmp_path: Path) -> None:
     """Served code points come from the donor, fitted; the others are the base's own."""
     fonts = _families(tmp_path)
-    config = _config(tmp_path, '[groups]\narrows = ["Donor"]\n')
+    config = _config(tmp_path, '[groups]\nArrows = ["Donor"]\n')
     status, report = _build(tmp_path, config, fonts)
     assert status == 0, report
     font = TTFont(tmp_path / "out" / "TestMono-Regular.ttf")
@@ -85,7 +87,7 @@ def test_a_connector_donor_is_fitted_by_its_frame_and_still_joins(tmp_path: Path
     build_font(fonts / "Tall" / "Tall-Regular.ttf", codepoints=[ord("M"), FULL_BLOCK, *box],
                spec=spec,
                ink={FULL_BLOCK: (0, -300, 600, 900), BOX_VERTICAL: (250, -400, 350, 1000)})
-    config = _config(tmp_path, '[groups]\nbox-drawing = ["Tall"]\n')
+    config = _config(tmp_path, '[groups]\n"Box Drawing" = ["Tall"]\n')
     status, report = _build(tmp_path, config, fonts)
     assert status == 0, report
     font = TTFont(tmp_path / "out" / "TestMono-Regular.ttf")
@@ -99,7 +101,7 @@ def test_an_incomplete_atomic_group_refuses_the_build(tmp_path: Path) -> None:
     fonts = _families(tmp_path)
     (fonts / "Half").mkdir()
     build_font(fonts / "Half" / "Half-Regular.ttf", codepoints=[ord("M"), BOX_VERTICAL])
-    config = _config(tmp_path, '[groups]\nbox-drawing = ["Half"]\n')
+    config = _config(tmp_path, '[groups]\n"Box Drawing" = ["Half"]\n')
     status, report = _build(tmp_path, config, fonts)
     assert status == 1
     assert "atomic" in report
@@ -109,7 +111,7 @@ def test_a_missing_style_stops_the_build_unless_told_otherwise(tmp_path: Path) -
     """No Bold anywhere: fail by default, nearest or synthesize on request."""
     fonts = _families(tmp_path)
     _with_bold(fonts)
-    config = _config(tmp_path, '[groups]\narrows = ["Donor"]\n')
+    config = _config(tmp_path, '[groups]\nArrows = ["Donor"]\n')
     status, report = _build(tmp_path, config, fonts)
     assert status == 1
     assert "no Bold style" in report
@@ -130,11 +132,12 @@ def test_asking_saves_the_answer_in_the_configuration(tmp_path: Path) -> None:
     """On a terminal the choice is asked once and kept in ``[styles.<Output>]``."""
     fonts = _families(tmp_path)
     _with_bold(fonts)
-    config = _config(tmp_path, '[groups]\narrows = ["Donor"]\n')
+    config = _config(tmp_path, '[groups]\nArrows = ["Donor"]\n')
     lines: list[str] = []
     answers = iter(["s", "s"])  # synthesize for the base and for the donor
     status = run_build(BuildOptions(config, fonts, tmp_path / "out"), say=lines.append,
-                       ask=lambda _prompt: next(answers), interactive=True)
+                       ask=lambda _prompt: next(answers), interactive=True,
+                       catalog=sample_catalog())
     assert status == 0, "\n".join(lines)
     styles = tomllib.loads(config.read_text(encoding="utf-8"))["styles"]["Bold"]
     assert styles == {"Base": "synthesize:Base-Regular.ttf",
@@ -192,3 +195,38 @@ def test_two_styles_under_one_name_refuse_the_build(tmp_path: Path) -> None:
     assert status == 1
     assert "one name" in report
     assert not (tmp_path / "out").exists()
+
+
+def test_a_generated_pin_draws_a_code_point_of_a_block_that_has_no_order(tmp_path: Path) -> None:
+    """Honour [generated_glyphs] on its own: Basic Latin has no order, M is pinned to Donor."""
+    fonts = _families(tmp_path)
+    config = _config(tmp_path, '[generated_glyphs]\n"U+004D" = ["Donor"]\n')
+    status, report = _build(tmp_path, config, fonts)
+    assert status == 0, report
+    font = TTFont(tmp_path / "out" / "TestMono-Regular.ttf")
+    assert _bounds(font, ord("M")) is None  # the donor's M is empty; the base's had ink
+
+
+def test_a_pin_of_a_family_that_is_gone_is_a_warning_not_a_failure(tmp_path: Path) -> None:
+    """Skip a generated pin naming a missing family; a block order naming one still fails."""
+    fonts = _families(tmp_path)
+    config = _config(tmp_path, '[generated_glyphs]\n"U+004D" = ["Gone"]\n')
+    status, report = _build(tmp_path, config, fonts)
+    assert status == 0, report
+    assert "Gone" in report
+    config = _config(tmp_path, '[groups]\nArrows = ["Gone"]\n')
+    status, report = _build(tmp_path, config, fonts)
+    assert status == 1
+    assert "unknown famil" in report
+
+
+def test_the_build_needs_the_block_list(tmp_path: Path) -> None:
+    """Say what is missing instead of building with no categories."""
+    fonts = _families(tmp_path)
+    config = _config(tmp_path, "")
+    lines: list[str] = []
+    status = run_build(BuildOptions(config, fonts, tmp_path / "out", "fail"), say=lines.append,
+                       ask=lambda _prompt: "", interactive=False,
+                       catalog=build_catalog([], {}))
+    assert status == 1
+    assert "Blocks.txt" in "\n".join(lines)

@@ -8,7 +8,7 @@ from http import HTTPStatus
 from pathlib import Path
 
 import pytest
-from support import FontSpec, NameSpec, build_font
+from support import FontSpec, NameSpec, build_font, sample_catalog
 
 from font_composer.common.config import Config
 from font_composer.common.names import UnicodeNames
@@ -48,7 +48,7 @@ def _make_state(tmp_path: Path, config_text: str = COMMENTED) -> ConsoleState:
     build_font(fonts / "Gamma" / "Gamma-Regular.ttf", codepoints=[ord("M"), ARROW_RIGHT])
     path = tmp_path / "font_composer.toml"
     path.write_text(config_text, encoding="utf-8")
-    return ConsoleState(fonts, Config.load(path))
+    return ConsoleState(fonts, Config.load(path), catalog=sample_catalog())
 
 
 def _order(state: ConsoleState, group: str) -> list[str]:
@@ -59,55 +59,55 @@ def test_families_are_added_in_the_order_they_are_chosen(tmp_path: Path) -> None
     """Append each choice; save it as an ordered list; keep comments; bump the version."""
     state = _make_state(tmp_path)
     before = state.version
-    assert state.choose("arrows", "Beta", "add")[0] == HTTPStatus.OK
-    status, payload = state.choose("arrows", "Alpha", "add")
+    assert state.choose("Arrows", "Beta", "add")[0] == HTTPStatus.OK
+    status, payload = state.choose("Arrows", "Alpha", "add")
     assert status == HTTPStatus.OK
-    assert payload["choices"] == {"arrows": ["Beta", "Alpha"]}
+    assert payload["choices"] == {"Arrows": ["Beta", "Alpha"]}
     assert state.version == before + 2
     text = state.config.path.read_text(encoding="utf-8")
     assert "# my notes" in text
     assert "# the name" in text
-    assert tomllib.loads(text)["groups"] == {"arrows": ["Beta", "Alpha"]}
+    assert tomllib.loads(text)["groups"] == {"Arrows": ["Beta", "Alpha"]}
 
 
 def test_adding_twice_changes_nothing_and_remove_move_clear_work(tmp_path: Path) -> None:
     """A family is listed once; it can be moved up and down, removed, or all cleared."""
     state = _make_state(tmp_path)
     for label in ("Alpha", "Beta", "Gamma", "Alpha"):
-        state.choose("arrows", label, "add")
-    assert _order(state, "arrows") == ["Alpha", "Beta", "Gamma"]
-    state.choose("arrows", "Gamma", "up")
-    assert _order(state, "arrows") == ["Alpha", "Gamma", "Beta"]
-    state.choose("arrows", "Alpha", "up")  # already first: stays
-    assert _order(state, "arrows") == ["Alpha", "Gamma", "Beta"]
-    state.choose("arrows", "Alpha", "down")
-    assert _order(state, "arrows") == ["Gamma", "Alpha", "Beta"]
-    state.choose("arrows", "Alpha", "remove")
-    assert _order(state, "arrows") == ["Gamma", "Beta"]
-    assert state.choose("arrows", "Alpha", "up")[0] == HTTPStatus.BAD_REQUEST
-    state.choose("arrows", None, "clear")
-    assert "arrows" not in state.config.choices
+        state.choose("Arrows", label, "add")
+    assert _order(state, "Arrows") == ["Alpha", "Beta", "Gamma"]
+    state.choose("Arrows", "Gamma", "up")
+    assert _order(state, "Arrows") == ["Alpha", "Gamma", "Beta"]
+    state.choose("Arrows", "Alpha", "up")  # already first: stays
+    assert _order(state, "Arrows") == ["Alpha", "Gamma", "Beta"]
+    state.choose("Arrows", "Alpha", "down")
+    assert _order(state, "Arrows") == ["Gamma", "Alpha", "Beta"]
+    state.choose("Arrows", "Alpha", "remove")
+    assert _order(state, "Arrows") == ["Gamma", "Beta"]
+    assert state.choose("Arrows", "Alpha", "up")[0] == HTTPStatus.BAD_REQUEST
+    state.choose("Arrows", None, "clear")
+    assert "Arrows" not in state.config.choices
 
 
 def test_an_atomic_group_takes_one_complete_family(tmp_path: Path) -> None:
     """Refuse half a box-drawing set, and a second family for an atomic group."""
     state = _make_state(tmp_path)
-    status, payload = state.choose("box-drawing", "Alpha", "add")
+    status, payload = state.choose("Box Drawing", "Alpha", "add")
     assert status == HTTPStatus.CONFLICT
     assert "atomic" in payload["error"]
-    assert state.choose("block-elements", "Alpha", "add")[0] == HTTPStatus.OK
-    status, payload = state.choose("block-elements", "Beta", "add")
+    assert state.choose("Block Elements", "Alpha", "add")[0] == HTTPStatus.OK
+    status, payload = state.choose("Block Elements", "Beta", "add")
     assert status == HTTPStatus.CONFLICT
     assert "one family" in payload["error"]
-    assert _order(state, "block-elements") == ["Alpha"]
+    assert _order(state, "Block Elements") == ["Alpha"]
 
 
 def test_unknown_ids_are_rejected(tmp_path: Path) -> None:
     """Answer 400 for ids and actions the console does not know."""
     state = _make_state(tmp_path)
     assert state.choose("nonsense", "Alpha", "add")[0] == HTTPStatus.BAD_REQUEST
-    assert state.choose("arrows", "Nowhere", "add")[0] == HTTPStatus.BAD_REQUEST
-    assert state.choose("arrows", "Alpha", "explode")[0] == HTTPStatus.BAD_REQUEST
+    assert state.choose("Arrows", "Nowhere", "add")[0] == HTTPStatus.BAD_REQUEST
+    assert state.choose("Arrows", "Alpha", "explode")[0] == HTTPStatus.BAD_REQUEST
 
 
 def test_a_family_is_shown_by_the_name_its_font_carries(tmp_path: Path) -> None:
@@ -126,23 +126,23 @@ def test_a_family_is_shown_by_the_name_its_font_carries(tmp_path: Path) -> None:
 def test_fit_is_planned_for_the_requested_glyphs_of_one_style_file(tmp_path: Path) -> None:
     """Answer ``fit`` for the code points asked for, in any style file; refuse bad requests."""
     state = _make_state(tmp_path)
-    status, payload = state.fit("Beta", "arrows", "Beta-Bold.ttf", [ARROW_LEFT, ARROW_UP, 0x41])
+    status, payload = state.fit("Beta", "Arrows", "Beta-Bold.ttf", [ARROW_LEFT, ARROW_UP, 0x41])
     assert status == HTTPStatus.OK
     assert payload["file"] == "Beta-Bold.ttf"
     assert set(payload["fit"]) <= {str(ARROW_LEFT), str(ARROW_UP)}  # 0x41 is not an arrow
-    assert state.fit("Beta", "arrows", "Nope.ttf", [ARROW_LEFT])[0] == HTTPStatus.NOT_FOUND
-    assert state.fit("Nobody", "arrows", "Beta-Bold.ttf", [])[0] == HTTPStatus.NOT_FOUND
+    assert state.fit("Beta", "Arrows", "Nope.ttf", [ARROW_LEFT])[0] == HTTPStatus.NOT_FOUND
+    assert state.fit("Nobody", "Arrows", "Beta-Bold.ttf", [])[0] == HTTPStatus.NOT_FOUND
     assert state.fit("Beta", "nonsense", "Beta-Bold.ttf", [])[0] == HTTPStatus.BAD_REQUEST
     too_many = list(range(3000))
-    assert state.fit("Beta", "arrows", "Beta-Bold.ttf", too_many)[0] == HTTPStatus.BAD_REQUEST
+    assert state.fit("Beta", "Arrows", "Beta-Bold.ttf", too_many)[0] == HTTPStatus.BAD_REQUEST
 
 
 def test_the_composition_fills_gaps_in_order_and_counts_sources(tmp_path: Path) -> None:
     """Take each glyph from the first family that has it; the rest fill in."""
     state = _make_state(tmp_path)
     for label in ("Alpha", "Beta", "Gamma"):
-        state.choose("arrows", label, "add")
-    status, payload = state.composition("arrows")
+        state.choose("Arrows", label, "add")
+    status, payload = state.composition("Arrows")
     assert status == HTTPStatus.OK
     by_cp = {glyph["codepoint"]: glyph for glyph in payload["glyphs"]}
     assert by_cp[ARROW_LEFT]["source"] == "Alpha"
@@ -155,7 +155,7 @@ def test_the_composition_fills_gaps_in_order_and_counts_sources(tmp_path: Path) 
     assert payload["fonts"] == {"Alpha": "Alpha-Regular.ttf", "Beta": "Beta-Regular.ttf",
                                 "Gamma": "Gamma-Regular.ttf"}
     assert set(payload["familyNames"]) == {"Alpha", "Beta", "Gamma"}  # the TTFs' own names
-    summary = {entry["group"]: entry for entry in state.snapshot()["summary"]}["arrows"]
+    summary = {entry["group"]: entry for entry in state.snapshot()["summary"]}["Arrows"]
     assert summary["order"] == ["Alpha", "Beta", "Gamma"]
     assert summary["covered"] == ARROWS_IN_FIXTURE
 
@@ -163,8 +163,8 @@ def test_the_composition_fills_gaps_in_order_and_counts_sources(tmp_path: Path) 
 def test_a_glyph_can_be_pinned_to_a_candidate_and_released(tmp_path: Path) -> None:
     """Write [glyphs]; the pinned family serves the glyph; None goes back to the order."""
     state = _make_state(tmp_path)
-    state.choose("arrows", "Alpha", "add")
-    state.choose("arrows", "Beta", "add")
+    state.choose("Arrows", "Alpha", "add")
+    state.choose("Arrows", "Beta", "add")
     status, payload = state.set_glyph(ARROW_LEFT, "Beta")
     assert status == HTTPStatus.OK
     glyph = {item["codepoint"]: item for item in payload["glyphs"]}[ARROW_LEFT]
@@ -181,11 +181,11 @@ def test_a_glyph_override_must_name_a_family_that_is_in_the_order_and_has_it(
 ) -> None:
     """Refuse a family outside the order, one without the glyph, and atomic groups."""
     state = _make_state(tmp_path)
-    state.choose("arrows", "Alpha", "add")
+    state.choose("Arrows", "Alpha", "add")
     assert state.set_glyph(ARROW_LEFT, "Beta")[0] == HTTPStatus.CONFLICT  # not in the order
-    state.choose("arrows", "Beta", "add")
+    state.choose("Arrows", "Beta", "add")
     assert state.set_glyph(ARROW_UP, "Alpha")[0] == HTTPStatus.CONFLICT  # no such glyph
-    state.choose("alnum", "Alpha", "add")  # alnum has its own order
+    state.choose("Basic Latin", "Alpha", "add")  # alnum has its own order
     assert state.set_glyph(ord("M"), "Alpha")[0] == HTTPStatus.OK
     assert state.set_glyph(0x2500, "Alpha")[0] == HTTPStatus.CONFLICT  # atomic
     assert state.set_glyph(0x10FFFF, "Alpha")[0] == HTTPStatus.BAD_REQUEST  # in no group
@@ -194,17 +194,17 @@ def test_a_glyph_override_must_name_a_family_that_is_in_the_order_and_has_it(
 def test_removing_a_family_drops_the_glyph_overrides_that_pointed_to_it(tmp_path: Path) -> None:
     """Never leave an override naming a family that left the group."""
     state = _make_state(tmp_path)
-    state.choose("arrows", "Alpha", "add")
-    state.choose("arrows", "Beta", "add")
+    state.choose("Arrows", "Alpha", "add")
+    state.choose("Arrows", "Beta", "add")
     state.set_glyph(ARROW_LEFT, "Beta")
-    state.choose("arrows", "Beta", "remove")
+    state.choose("Arrows", "Beta", "remove")
     assert state.config.glyph_overrides == {}
 
 
 def test_the_style_map_resolves_output_styles_and_takes_overrides(tmp_path: Path) -> None:
     """Show which file serves Regular and Bold, and let the user map one by hand."""
     state = _make_state(tmp_path)
-    state.choose("arrows", "Beta", "add")
+    state.choose("Arrows", "Beta", "add")
     style_map = state.snapshot()["styleMap"]
     assert style_map["outputStyles"] == ["Regular", "Bold"]
     files = {item["file"]: item for item in style_map["families"]["Beta"]}
@@ -232,10 +232,10 @@ def test_hand_edits_survive_a_choice_made_afterwards(tmp_path: Path) -> None:
         encoding="utf-8")
     later = path.stat().st_mtime_ns + 1_000_000_000
     os.utime(path, ns=(later, later))
-    assert state.choose("arrows", "Beta", "add")[0] == HTTPStatus.OK
+    assert state.choose("Arrows", "Beta", "add")[0] == HTTPStatus.OK
     data = tomllib.loads(path.read_text(encoding="utf-8"))
     assert data["output"]["styles"] == ["Regular", "Italic"]
-    assert data["groups"] == {"arrows": ["Beta"]}
+    assert data["groups"] == {"Arrows": ["Beta"]}
 
 
 def test_a_hand_edit_is_seen_by_the_version_poll(tmp_path: Path) -> None:
@@ -243,12 +243,12 @@ def test_a_hand_edit_is_seen_by_the_version_poll(tmp_path: Path) -> None:
     state = _make_state(tmp_path)
     before = state.current_version()
     path = state.config.path
-    path.write_text(path.read_text(encoding="utf-8") + 'arrows = ["Beta", "Alpha"]\n',
+    path.write_text(path.read_text(encoding="utf-8") + 'Arrows = ["Beta", "Alpha"]\n',
                     encoding="utf-8")
     later = path.stat().st_mtime_ns + 1_000_000_000
     os.utime(path, ns=(later, later))
     assert state.current_version() == before + 1
-    assert state.snapshot()["choices"] == {"arrows": ["Beta", "Alpha"]}
+    assert state.snapshot()["choices"] == {"Arrows": ["Beta", "Alpha"]}
 
 
 def test_an_invalid_hand_edit_is_reported_and_never_overwritten(tmp_path: Path) -> None:
@@ -259,7 +259,7 @@ def test_an_invalid_hand_edit_is_reported_and_never_overwritten(tmp_path: Path) 
     later = path.stat().st_mtime_ns + 1_000_000_000
     os.utime(path, ns=(later, later))
     assert state.snapshot()["configError"] is not None
-    status, payload = state.choose("arrows", "Beta", "add")
+    status, payload = state.choose("Arrows", "Beta", "add")
     assert status == HTTPStatus.INTERNAL_SERVER_ERROR
     assert "cannot load" in payload["error"]
     assert path.read_text(encoding="utf-8") == "[groups\n"
@@ -268,18 +268,18 @@ def test_an_invalid_hand_edit_is_reported_and_never_overwritten(tmp_path: Path) 
 def test_snapshot_flags_uneven_families(tmp_path: Path) -> None:
     """Name the groups on which a family's styles disagree."""
     snapshot = _make_state(tmp_path).snapshot()
-    assert snapshot["uneven"]["Beta"] == ["arrows"]
+    assert snapshot["uneven"]["Beta"] == ["Arrows"]
     assert snapshot["uneven"]["Alpha"] == []
 
 
 def test_glyphs_lists_only_the_present_code_points(tmp_path: Path) -> None:
     """Report, per style file, which code points of the group the font holds."""
     state = _make_state(tmp_path)
-    status, payload = state.glyphs("Beta", "arrows")
+    status, payload = state.glyphs("Beta", "Arrows")
     assert status == HTTPStatus.OK
     assert payload["styles"] == {"Beta-Bold.ttf": [ARROW_LEFT, ARROW_UP, ARROW_RIGHT],
                                  "Beta-Regular.ttf": [ARROW_LEFT, ARROW_UP]}
-    assert state.glyphs("Nowhere", "arrows")[0] == HTTPStatus.NOT_FOUND
+    assert state.glyphs("Nowhere", "Arrows")[0] == HTTPStatus.NOT_FOUND
     assert state.glyphs("Beta", "nonsense")[0] == HTTPStatus.BAD_REQUEST
 
 
@@ -295,19 +295,23 @@ def test_glyphs_that_leave_the_base_cell_carry_a_fit_plan(tmp_path: Path) -> Non
                ink={ARROW_LEFT: (-100, 100, 700, 500), ARROW_UP: (100, 0, 500, 700)})
     path = tmp_path / "font_composer.toml"
     path.write_text('[cell]\nbase = "Alpha"\n', encoding="utf-8")
-    state = ConsoleState(fonts, Config.load(path))
-    state.choose("arrows", "Beta", "add")
-    status, glyphs = state.glyphs("Beta", "arrows")
+    state = ConsoleState(fonts, Config.load(path), catalog=sample_catalog())
+    state.choose("Arrows", "Beta", "add")
+    status, glyphs = state.glyphs("Beta", "Arrows")
     assert status == HTTPStatus.OK
     plan = glyphs["fit"]["Beta-Regular.ttf"][str(ARROW_LEFT)]
-    assert plan["kind"] == "oversize"
+    assert plan["kind"] == "category"
     assert plan["clipped"]
-    assert plan["sx"] < 1.0
-    assert str(ARROW_UP) not in glyphs["fit"]["Beta-Regular.ttf"]  # fits: nothing to say
-    status, payload = state.composition("arrows")
+    assert plan["sx"] == plan["sy"] < 1.0  # in proportion, never stretched
+    # the arrow that fits is scaled with its category: it shares the floor, not the extra
+    shared = glyphs["fit"]["Beta-Regular.ttf"][str(ARROW_UP)]
+    assert shared["kind"] == "category"
+    assert not shared["clipped"]
+    assert plan["sx"] < shared["sx"] == shared["sy"] < 1.0
+    status, payload = state.composition("Arrows")
     by_cp = {glyph["codepoint"]: glyph for glyph in payload["glyphs"]}
-    assert by_cp[ARROW_LEFT]["fit"]["kind"] == "oversize"
-    assert "fit" not in by_cp[ARROW_UP]
+    assert by_cp[ARROW_LEFT]["fit"]["kind"] == "category"
+    assert by_cp[ARROW_UP]["fit"]["sx"] == shared["sx"]
 
 
 def test_official_names_are_served_per_group(tmp_path: Path) -> None:
@@ -320,8 +324,9 @@ def test_official_names_are_served_per_group(tmp_path: Path) -> None:
     build_font(fonts / "Alpha" / "Alpha-Regular.ttf", codepoints=[ord("M")])
     config_path = tmp_path / "font_composer.toml"
     config_path.write_text("", encoding="utf-8")
-    state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(names_path))
-    status, payload = state.glyph_names("arrows")
+    state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(names_path),
+                         catalog=sample_catalog())
+    status, payload = state.glyph_names("Arrows")
     assert status == HTTPStatus.OK
     assert payload["names"] == {"8592": "LEFTWARDS ARROW", "8593": "UPWARDS ARROW"}
     assert state.glyph_names("nonsense")[0] == HTTPStatus.BAD_REQUEST
@@ -340,9 +345,10 @@ def test_box_lines_that_overshoot_the_block_on_purpose_do_not_shrink_the_family(
                ink={0x2588: (0, -200, 600, 800), 0x2502: (250, -400, 350, 1000)})
     config_path = tmp_path / "font_composer.toml"
     config_path.write_text('[cell]\nbase = "Alpha"\n', encoding="utf-8")
-    state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(tmp_path / "none.txt"))
-    state.choose("box-drawing", "Beta", "add")  # refused: atomic and incomplete; fit is independent
-    status, glyphs = state.glyphs("Beta", "box-drawing")
+    state = ConsoleState(fonts, Config.load(config_path), UnicodeNames(tmp_path / "none.txt"),
+                         catalog=sample_catalog())
+    state.choose("Box Drawing", "Beta", "add")  # refused: atomic and incomplete; fit is independent
+    status, glyphs = state.glyphs("Beta", "Box Drawing")
     assert status == HTTPStatus.OK
     line = glyphs["fit"]["Beta-Regular.ttf"][str(0x2502)]
     assert line["sy"] == pytest.approx(1.0)  # not shrunk to swallow the overshoot
@@ -470,7 +476,7 @@ def test_a_list_that_names_only_entries_is_spelled_out_when_consolidation_goes_o
 def test_a_style_can_be_built_under_a_name_of_its_own(tmp_path: Path) -> None:
     """Keep the style tracked by its name; the custom name is a second, unique, name."""
     state = _make_state(tmp_path)
-    assert state.choose("arrows", "Beta", "add")[0] == HTTPStatus.OK
+    assert state.choose("Arrows", "Beta", "add")[0] == HTTPStatus.OK
     assert state.set_style_name("Bold", "Strong")[0] == HTTPStatus.OK
     snapshot = state.snapshot()
     assert snapshot["styleMap"]["outputStyles"] == ["Regular", "Bold"]  # still tracked as Bold

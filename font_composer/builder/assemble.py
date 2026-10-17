@@ -18,22 +18,28 @@ from fontTools.fontBuilder import FontBuilder
 
 from font_composer.builder.draw import CellBox, DrawSpec, Source, draw_glyph, draw_named
 from font_composer.common.fit import (
-    CONNECTOR_GROUPS,
     EPS,
     Box,
     CellSpec,
     FitPlan,
+    fit_class,
     overflow_of,
     plan_fit,
 )
-from font_composer.common.planner import cell_of, connector_reach, ink_of, plan_glyphs
+from font_composer.common.planner import (
+    FitTarget,
+    cell_of,
+    connector_reach,
+    ink_of,
+    plan_glyphs,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
     from pathlib import Path
 
     from font_composer.builder.donors import Donor
-    from font_composer.common.groups import GlyphGroup
+    from font_composer.common.groups import Catalog, GlyphGroup
     from font_composer.common.library import FontLibrary
     from font_composer.common.styles import StyleTarget
 
@@ -94,6 +100,7 @@ class StyleBuild:
     base: Donor
     donors: Mapping[str, Donor]
     wanted: Mapping[int, Wanted]
+    catalog: Catalog
     fit_to_base: bool = True
 
 
@@ -232,7 +239,7 @@ def _plan_chosen(
         family = build.library.family(label)
         if family is not None:
             plans.update(plan_glyphs(family, groups[group_id], build.donors[label].entry,
-                                     codepoints, base_cell))
+                                     codepoints, FitTarget(base_cell, build.catalog)))
     return plans
 
 
@@ -253,7 +260,7 @@ def _draw_wanted(
     glyphs: dict[str, Any] = {}
     for codepoint, (label, want) in chosen.items():
         donor = build.donors[label]
-        if want.group.id in CONNECTOR_GROUPS:
+        if fit_class(want.group.block) == "connectors":
             _note_joins(donor, want.group, codepoint, result.layout)
         glyph, applied = drawer.donor_glyph(sources.get(donor), codepoint, plans.get(codepoint),
                                             embolden=donor.synthesize)

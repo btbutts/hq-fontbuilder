@@ -175,3 +175,44 @@ def test_style_names_round_trip_and_the_key_goes_when_it_empties(tmp_path: Path)
     config.update(lambda c: c.set_setting("output", "style-names", {}))
     assert "style-names" not in tomllib.loads(path.read_text(encoding="utf-8"))["output"]
     assert Config.load(path).style_names == {}
+
+
+def test_generated_pins_round_trip_and_replace_only_their_code_points(tmp_path: Path) -> None:
+    """Write the pins as lists under a warning, and let a replacement touch only its own."""
+    path = tmp_path / "font_composer.toml"
+    config = Config.load(path)
+    config.overlay.replace_pins([0x41, 0x42], {0x41: ["A", "B"], 0x42: ["A"]})
+    config.overlay.replace_pins([0x41], {})  # drops U+0041, keeps U+0042
+    config.save()
+    assert Config.load(path).overlay.pins == {0x42: ["A"]}
+    text = path.read_text(encoding="utf-8")
+    assert "Managed by font_composer" in text
+    assert tomllib.loads(text)["generated_glyphs"] == {"U+0042": ["A"]}
+
+
+def test_overlay_orders_exist_only_after_they_are_stored(tmp_path: Path) -> None:
+    """Keep the optional table out of the file until the user asks for it."""
+    config = Config.load(tmp_path / "font_composer.toml")
+    assert config.overlay.orders is None
+    config.overlay.set_order("overlay:powerline", ["A"])  # no section: nothing is written
+    assert config.overlay.orders is None
+    config.overlay.set_orders({"overlay:powerline": ["A"]})
+    config.overlay.set_order("overlay:ascii-alnum", ["B", "A"])
+    assert config.overlay.orders == {"overlay:powerline": ["A"],
+                                     "overlay:ascii-alnum": ["B", "A"]}
+    config.overlay.set_order("overlay:powerline", [])
+    assert config.overlay.orders == {"overlay:ascii-alnum": ["B", "A"]}
+    config.overlay.set_orders(None)
+    assert config.overlay.orders is None
+
+
+def test_block_names_with_spaces_are_written_as_quoted_keys(tmp_path: Path) -> None:
+    """Save the official block names as they are."""
+    path = tmp_path / "font_composer.toml"
+    config = Config.load(path)
+    config.set_families("Latin-1 Supplement", ["A"])
+    config.set_families("Greek and Coptic", ["B"])
+    config.save()
+    assert tomllib.loads(path.read_text(encoding="utf-8"))["groups"] == {
+        "Latin-1 Supplement": ["A"], "Greek and Coptic": ["B"]}
+    assert Config.load(path).choices == {"Latin-1 Supplement": ["A"], "Greek and Coptic": ["B"]}

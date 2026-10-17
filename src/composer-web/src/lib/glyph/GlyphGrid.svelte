@@ -9,9 +9,11 @@
 		type LayoutMode
 	} from './glyphLayout';
 	import { colors } from '../styles.svelte';
+	import type { NamedRow } from '../data/api';
 
 	interface Props {
-		groupId: string;
+		/** rows of the group that are not 16 wide */
+		namedRows: readonly NamedRow[];
 		cells: LayoutCell[];
 		mode: LayoutMode;
 		/** font family for cells that do not carry their own */
@@ -23,9 +25,9 @@
 		onpick?: (cell: LayoutCell, element: HTMLElement) => void;
 	}
 
-	let { groupId, cells, mode, fontFamily, geometry, showFitted = false, onpick }: Props = $props();
+	let { namedRows, cells, mode, fontFamily, geometry, showFitted = false, onpick }: Props = $props();
 
-	const rows = $derived(layoutCells(groupId, cells, mode));
+	const rows = $derived(layoutCells(namedRows, cells, mode));
 	const slot = $derived(slotWidth(geometry));
 </script>
 

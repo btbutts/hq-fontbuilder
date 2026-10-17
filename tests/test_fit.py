@@ -13,6 +13,7 @@ from font_composer.common.fit import (
     CellSpec,
     class_fit,
     fit_class,
+    is_joined,
     plan_fit,
     plan_in_class,
 )
@@ -182,11 +183,19 @@ LETTERS = [Box(0.05, 0.0, 0.55, 0.73), Box(0.06, 0.0, 0.54, 0.70), Box(0.04, 0.0
 
 
 def test_categories_are_fitted_together_by_class() -> None:
-    """Know which groups share a scale and which are fitted glyph by glyph."""
-    assert fit_class("alnum") == fit_class("latin-ext") == "text"
-    assert fit_class("box-drawing") == fit_class("block-elements") == "connectors"
-    assert fit_class("punctuation") is None
-    assert fit_class("arrows") is None
+    """Know which blocks share a scale and which are fitted glyph by glyph."""
+    assert fit_class("Basic Latin") == fit_class("Latin Extended-A") == "text"
+    assert fit_class("Greek and Coptic") == fit_class("Cyrillic") == "text"
+    assert fit_class("Box Drawing") == fit_class("Block Elements") == "connectors"
+    assert fit_class("General Punctuation") == fit_class("Arrows") == "symbols"
+    assert fit_class("Private Use Area") == fit_class("Dingbats") == "symbols"
+
+
+def test_only_the_pieces_that_join_keep_a_stretching_fit() -> None:
+    """Name the glyphs that must still meet their neighbours: powerline, braces, integrals."""
+    assert is_joined(0xE0B0) and is_joined(0xE0A0) and is_joined(0xE0D4)
+    assert is_joined(0x239B) and is_joined(0x23B3) and is_joined(0x2320) and is_joined(0x2321)
+    assert not is_joined(0x2190) and not is_joined(0xE0D5) and not is_joined(0x41)
 
 
 def test_a_category_with_no_offender_is_not_shrunk() -> None:
@@ -254,3 +263,27 @@ def test_the_base_font_keeps_its_own_box_drawing() -> None:
     shared = class_fit("connectors", [diagonal], DEJAVU, Box(-0.01, -0.25, 0.612, 0.938), DEJAVU)
     assert shared.scale == pytest.approx(1.0)
     assert plan_in_class(diagonal, shared, DEJAVU).identity
+
+
+def test_a_symbol_category_is_shrunk_in_proportion_and_stays_centred_on_its_baseline() -> None:
+    """Scale every glyph of an arrows-like block alike, never in one direction only."""
+    wide_arrow = Box(-0.05, 0.10, 0.65, 0.50)  # 0.1 em wider than the donor's 0.6 em cell
+    small = Box(0.20, 0.00, 0.40, 0.60)
+    shared = class_fit("symbols", [wide_arrow, small], SOURCE_CODE, SOURCE_CODE_FRAME, DEJAVU)
+    assert shared.needed == pytest.approx(DEJAVU.width / 0.70)
+    assert shared.scale == pytest.approx(CLASS_FLOORS["symbols"])
+    for ink in (wide_arrow, small):
+        plan = plan_in_class(ink, shared, DEJAVU)
+        assert plan.sx == pytest.approx(plan.sy)  # proportional: never stretched or squished
+        moved = plan.apply(ink)
+        assert moved.y0 == pytest.approx(ink.y0 * plan.sy)  # still on its baseline
+        assert (moved.x0 + moved.x1) / 2 == pytest.approx(DEJAVU.width / 2)  # still centred
+        assert moved.x0 >= -TOLERANCE
+        assert moved.x1 <= DEJAVU.width + TOLERANCE
+    assert plan_in_class(small, shared, DEJAVU).sx == pytest.approx(CLASS_FLOORS["symbols"])
+
+
+def test_a_symbol_category_with_no_offender_is_left_alone() -> None:
+    """Change nothing in a block whose glyphs all fit."""
+    shared = class_fit("symbols", [Box(0.1, 0.0, 0.5, 0.7)], SOURCE_CODE, SOURCE_CODE_FRAME, DEJAVU)
+    assert shared.scale == pytest.approx(1.0)

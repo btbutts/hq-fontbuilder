@@ -41,15 +41,16 @@ from font_composer.builder.donors import (
 from font_composer.builder.verify import verify_font
 from font_composer.common.composition import resolve_group
 from font_composer.common.config import DEFAULT_STYLES, Config, ConfigError
-from font_composer.common.groups import GROUPS
+from font_composer.common.groups import Catalog
 from font_composer.common.library import FontLibrary
 from font_composer.common.paths import DEFAULT_FONTS_DIR, DEFAULT_OUTPUT_DIR
 from font_composer.common.styles import output_styles, parse_style_name, same_style_name
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
     from pathlib import Path
 
+    from font_composer.common.groups import GlyphGroup
     from font_composer.common.library import Family, StyleEntry
 
 ON_MISSING = ("ask", "nearest", "synthesize", "fail")
@@ -76,26 +77,47 @@ class BuildOptions:
 class Plan:
     """What the configuration asks for, resolved against the scanned fonts."""
 
+    catalog: Catalog
     wanted: dict[int, Wanted] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
 
-def plan_wanted(config: Config, library: FontLibrary) -> Plan:
-    """Resolve every group of the configuration into the code points it serves."""
-    plan = Plan()
+def _pins_in(
+    group: GlyphGroup, pins: Mapping[int, list[str]], library: FontLibrary, plan: Plan,
+) -> dict[int, tuple[str, ...]]:
+    """Return the generated pins of a block; a family that is gone is dropped with a warning."""
+    here: dict[int, tuple[str, ...]] = {}
+    for codepoint, families in pins.items():
+        if not group.contains(codepoint):
+            continue
+        known = tuple(label for label in families if library.family(label) is not None)
+        if len(known) < len(families):
+            gone = ", ".join(sorted(set(families) - set(known)))
+            plan.warnings.append(f"U+{codepoint:04X}: generated pin names {gone}, which is "
+                                 "not in the fonts directory")
+        if known:
+            here[codepoint] = known
+    return here
+
+
+def plan_wanted(config: Config, library: FontLibrary, catalog: Catalog) -> Plan:
+    """Resolve every block of the configuration into the code points it serves."""
+    plan = Plan(catalog)
     overrides = config.glyph_overrides
     choices = config.choices
-    for group in GROUPS:
+    pins = config.overlay.pins
+    for group in catalog.blocks:
         order = choices.get(group.id, [])
-        if not order:
+        here = _pins_in(group, pins, library, plan)
+        if not order and not here:
             continue
         unknown = [label for label in order if library.family(label) is None]
         if unknown:
             plan.errors.append(f"{group.id}: unknown famil{'ies' if len(unknown) > 1 else 'y'} "
                                f"{', '.join(unknown)}")
             continue
-        composition = resolve_group(group, order, library, overrides)
+        composition = resolve_group(group, order, library, overrides, here)
         sources = {glyph.source for glyph in composition.glyphs}
         if group.atomic and composition.glyphs:
             if len(sources) > 1:
@@ -311,7 +333,7 @@ def _write_style(run: _Run, style: str, donors: dict[str, Donor]) -> bool:
                     run.options.output_dir or DEFAULT_OUTPUT_DIR, run.copyright_line)
     fit_to_base = run.config.setting("cell", "fit", "base") == "base"
     build = StyleBuild(naming, run.library, donors[run.config.base_family], donors,
-                       run.plan.wanted, fit_to_base=fit_to_base)
+                       run.plan.wanted, run.plan.catalog, fit_to_base=fit_to_base)
     built = build_style(build)
     built.used_files = {label: f"{label}: {donor.entry.file_name} ({donor.note})"
                         for label, donor in sorted(donors.items())}
@@ -402,30 +424,45 @@ def _prepare(
     return donors_of, notice
 
 
+def _start(
+    options: BuildOptions, say: Callable[[str], None], catalog: Catalog | None,
+) -> _Run | None:
+    """Load and plan a build; None (after saying why) when it cannot go on."""
+    loaded = _load(options, say)
+    if loaded is None:
+        return None
+    settled, config, library = loaded
+    found = catalog if catalog is not None else Catalog.load()
+    if not found.blocks:
+        say("font_composer: the Unicode block list is not available (src/char-sets/Blocks.txt "
+            "could not be read or downloaded); the glyph categories need it")
+        return None
+    plan = plan_wanted(config, library, found)
+    for text in plan.errors:
+        say(f"ERROR: {text}")
+    if plan.errors:
+        return None
+    return _Run(settled, config, library, plan, say)
+
+
 def run_build(
     options: BuildOptions,
     say: Callable[[str], None] = print,
     ask: Callable[[str], str] = input,
     *,
     interactive: bool | None = None,
+    catalog: Catalog | None = None,
 ) -> int:
     """Run a build; return the process exit status (0 only when nothing failed)."""
-    loaded = _load(options, say)
-    if loaded is None:
+    run = _start(options, say, catalog)
+    if run is None:
         return 1
-    options, config, library = loaded
-    plan = plan_wanted(config, library)
-    for text in plan.errors:
-        say(f"ERROR: {text}")
-    if plan.errors:
-        return 1
-    run = _Run(options, config, library, plan, say)
     prepared = _prepare(run, ask, interactive=sys.stdin.isatty() if interactive is None
                         else interactive)
     if prepared is None:
         return 1
     donors_of, notice = prepared
-    out_dir = options.output_dir or DEFAULT_OUTPUT_DIR
+    out_dir = run.options.output_dir or DEFAULT_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
     results = [_write_style(run, style, donors) for style, donors in donors_of.items()]
     (out_dir / "NOTICE").write_text(notice, encoding="utf-8")

@@ -3,6 +3,13 @@
  * /api/state payload built by font_composer/composer/state.py exactly.
  */
 
+import { overlayStore } from './overlay.svelte.ts';
+
+/** The view a read request is about: the overlay's categories, or the Unicode blocks. */
+function view(): string {
+	return overlayStore.enabled ? '1' : '0';
+}
+
 export interface StyleInfo {
 	file: string;
 	family: string;
@@ -19,7 +26,6 @@ export interface StyleInfo {
 	cellAdvance: number;
 	modalAdvance: number;
 	codepointCount: number;
-	coverage: Record<string, [number, number]>;
 }
 
 export interface FamilyError {
@@ -36,12 +42,36 @@ export interface FamilyInfo {
 	errors: FamilyError[];
 }
 
+export interface GroupFont {
+	/** the family's folder name */
+	family: string;
+	/** the name its font file carries */
+	name: string;
+	/** how many glyphs of the category its reference style holds */
+	count: number;
+}
+
+export interface NamedRow {
+	label: string;
+	low: number;
+	high: number;
+}
+
 export interface GroupInfo {
 	id: string;
 	label: string;
 	total: number;
 	atomic: boolean;
+	/** an overlay category: shown instead of a part of a block, never written to the file */
+	overlay: boolean;
+	/** the id of the Unicode block it lies in */
+	block: string;
+	/** stretches of consecutive code points of the category */
 	ranges: [number, number][];
+	/** rows of the group page that are not 16 wide (the ASCII letters and digits) */
+	rows: NamedRow[];
+	/** the families that have glyphs in it, with how many */
+	fonts: GroupFont[];
 }
 
 export interface BaseMetrics {
@@ -61,6 +91,8 @@ export interface SummaryEntry {
 	total: number;
 	/** families that cover the whole group on their own */
 	candidates: string[];
+	/** family -> how many of the category's glyphs it supplies */
+	sources: Record<string, number>;
 }
 
 export interface StyleFileInfo {
@@ -109,9 +141,17 @@ export interface ProblemFont {
 	reason: string;
 }
 
+export interface OverlayState {
+	/** the overlay orders are kept in the configuration file */
+	stored: boolean;
+	orders: Record<string, string[]>;
+}
+
 export interface ComposerState {
 	version: number;
 	fontsDir: string;
+	catalogReady: boolean;
+	fontCount: number;
 	groups: GroupInfo[];
 	families: FamilyInfo[];
 	coverage: Record<string, Record<string, [number, number]>>;
@@ -119,6 +159,7 @@ export interface ComposerState {
 	uneven: Record<string, string[]>;
 	/** group id -> families in inheritance order */
 	choices: Record<string, string[]>;
+	overlay: OverlayState;
 	/** "U+2714" -> the family pinned to that code point */
 	glyphOverrides: Record<string, string>;
 	/** every style the fonts hold, upright first, light to heavy */
@@ -161,6 +202,8 @@ export interface GlyphsPayload {
 export interface ChooseResult {
 	ok: boolean;
 	error?: string;
+	/** the new inheritance order of an overlay category */
+	order?: string[];
 }
 
 export interface NamesPayload {
@@ -170,7 +213,7 @@ export interface NamesPayload {
 }
 
 export async function fetchNames(group: string): Promise<NamesPayload> {
-	const response = await fetch(`/api/names?${new URLSearchParams({ group })}`);
+	const response = await fetch(`/api/names?${new URLSearchParams({ group, overlay: view() })}`);
 	if (!response.ok) throw new Error(`/api/names: ${response.status}`);
 	return (await response.json()) as NamesPayload;
 }
@@ -194,6 +237,8 @@ export interface Composition {
 	atomic: boolean;
 	total: number;
 	order: string[];
+	/** families that serve or could serve a glyph without being in the order */
+	extra: string[];
 	/** family -> the style file its glyphs are drawn from (the reference style) */
 	fonts: Record<string, string>;
 	/** family -> the family name its font file carries ("FiraMono Nerd Font"), for display */
@@ -206,8 +251,8 @@ export interface Composition {
 	invalidOverrides: { codepoint: number; family: string; reason: string }[];
 }
 
-export async function fetchState(): Promise<ComposerState> {
-	const response = await fetch('/api/state');
+export async function fetchState(overlay: boolean): Promise<ComposerState> {
+	const response = await fetch(`/api/state?${new URLSearchParams({ overlay: overlay ? '1' : '0' })}`);
 	if (!response.ok) throw new Error(`/api/state: ${response.status}`);
 	return (await response.json()) as ComposerState;
 }
@@ -220,7 +265,7 @@ export async function fetchVersion(): Promise<number> {
 }
 
 export async function fetchGlyphs(family: string, group: string): Promise<GlyphsPayload> {
-	const query = new URLSearchParams({ family, group });
+	const query = new URLSearchParams({ family, group, overlay: view() });
 	const response = await fetch(`/api/glyphs?${query}`);
 	if (!response.ok) throw new Error(`/api/glyphs: ${response.status}`);
 	return (await response.json()) as GlyphsPayload;
@@ -256,31 +301,17 @@ async function post(path: string, body: unknown): Promise<Response> {
 }
 
 async function result(response: Response): Promise<ChooseResult> {
-	if (response.ok) return { ok: true };
-	const payload = (await response.json().catch(() => ({}))) as { error?: string };
+	const payload = (await response.json().catch(() => ({}))) as { error?: string; order?: string[] };
+	if (response.ok) return { ok: true, order: payload.order };
 	return { ok: false, error: payload.error ?? `error ${response.status}` };
 }
 
-export async function postChoose(
-	group: string,
-	action: ChooseAction,
-	family: string | null = null
-): Promise<ChooseResult> {
-	return result(await post('/api/choose', { group, action, family }));
-}
-
-export async function fetchComposition(group: string): Promise<Composition> {
-	const response = await fetch(`/api/composition?${new URLSearchParams({ group })}`);
+export async function fetchComposition(group: string, order?: string[]): Promise<Composition> {
+	const query = new URLSearchParams({ group, overlay: view() });
+	for (const family of order ?? []) query.append('order', family);
+	const response = await fetch(`/api/composition?${query}`);
 	if (!response.ok) throw new Error(`/api/composition: ${response.status}`);
 	return (await response.json()) as Composition;
-}
-
-/** Serve one code point from one family; `null` goes back to the inheritance order. */
-export async function postGlyph(
-	codepoint: number,
-	family: string | null
-): Promise<ChooseResult> {
-	return result(await post('/api/glyph', { codepoint, family }));
 }
 
 /** Map an output style of a family to one of its style files; `null` is the default rules. */
@@ -305,4 +336,32 @@ export async function postStyleConsolidate(enabled: boolean): Promise<ChooseResu
 /** Build an output style under another name; `null` goes back to the name the fonts give. */
 export async function postStyleName(style: string, name: string | null): Promise<ChooseResult> {
 	return result(await post('/api/style-name', { style, name }));
+}
+
+/** `order` is the order the browser holds, sent for an overlay category only. */
+export async function postChoose(
+	group: string,
+	action: ChooseAction,
+	family: string | null = null,
+	order?: string[]
+): Promise<ChooseResult> {
+	return result(await post('/api/choose', { group, action, family, order }));
+}
+
+/** Serve one code point from one family; `null` goes back to the inheritance order. */
+export async function postGlyph(
+	codepoint: number,
+	family: string | null,
+	group?: string,
+	order?: string[]
+): Promise<ChooseResult> {
+	return result(await post('/api/glyph', { codepoint, family, group, order }));
+}
+
+/** Keep the overlay orders in the configuration file, or take them out of it. */
+export async function postOverlayStore(
+	enabled: boolean,
+	orders: Record<string, string[]>
+): Promise<ChooseResult> {
+	return result(await post('/api/overlay-store', { enabled, orders }));
 }

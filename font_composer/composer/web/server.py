@@ -62,7 +62,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, TypeGuard, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
 from font_composer.common.config import Config, ConfigError
@@ -103,6 +103,8 @@ _FONT_TYPES = {".ttf": "font/ttf", ".otf": "font/otf"}
 
 _FONT_URL_PARTS = 2  # /fonts/<family>/<filename>
 
+_TRUE_FLAGS = ("1", "true")
+
 _KEY_POLL_SECONDS = 0.1  # also how often the view is redrawn at most
 
 
@@ -116,6 +118,22 @@ class ConsoleHTTPServer(ThreadingHTTPServer):
         self.address_family = socket.AF_INET6 if ":" in address else socket.AF_INET
         super().__init__((address, port), _Handler)
         self.state = state
+
+
+def _flag(query: dict[str, list[str]]) -> bool:
+    """Read the ``overlay`` query parameter: the view the request is about."""
+    return query.get("overlay", ["0"])[0] in _TRUE_FLAGS
+
+
+def _is_string_list(value: Any) -> TypeGuard[list[str]]:
+    """Tell whether a JSON value is a list of strings."""
+    return isinstance(value, list) and all(isinstance(item, str) for item in value)
+
+
+def _is_orders(value: Any) -> TypeGuard[dict[str, list[str]]]:
+    """Tell whether a JSON value maps names to lists of strings."""
+    return isinstance(value, dict) and all(
+        isinstance(key, str) and _is_string_list(item) for key, item in value.items())
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -170,13 +188,14 @@ class _Handler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         if path == "/api/state":
-            self._send_json(self._state.snapshot())
+            self._send_json(self._state.snapshot(overlay=_flag(parse_qs(parsed.query))))
         elif path == "/api/version":
             self._send_json({"version": self._state.current_version()})
         elif path == "/api/glyphs":
             query = parse_qs(parsed.query)
             status, payload = self._state.glyphs(
-                query.get("family", [""])[0], query.get("group", [""])[0])
+                query.get("family", [""])[0], query.get("group", [""])[0],
+                overlay=_flag(query))
             self._send_json(payload, status=status)
         elif path == "/api/fit":
             query = parse_qs(parsed.query)
@@ -190,12 +209,14 @@ class _Handler(BaseHTTPRequestHandler):
                 query.get("file", [""])[0], points)
             self._send_json(payload, status=status)
         elif path == "/api/names":
+            query = parse_qs(parsed.query)
             status, payload = self._state.glyph_names(
-                parse_qs(parsed.query).get("group", [""])[0])
+                query.get("group", [""])[0], overlay=_flag(query))
             self._send_json(payload, status=status)
         elif path == "/api/composition":
+            query = parse_qs(parsed.query)
             status, payload = self._state.composition(
-                parse_qs(parsed.query).get("group", [""])[0])
+                query.get("group", [""])[0], query.get("order"), overlay=_flag(query))
             self._send_json(payload, status=status)
         elif path.startswith("/fonts/"):
             self._get_font(path.removeprefix("/fonts/"))
@@ -226,7 +247,8 @@ class _Handler(BaseHTTPRequestHandler):
                     "/api/style": self._post_style,
                     "/api/style-type": self._post_style_type,
                     "/api/style-consolidate": self._post_style_consolidate,
-                    "/api/style-name": self._post_style_name}
+                    "/api/style-name": self._post_style_name,
+                    "/api/overlay-store": self._post_overlay_store}
         handler = handlers.get(path)
         if handler is None:
             self._send_json({"error": f"not found: {path}"}, status=404)
@@ -238,22 +260,37 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_json(payload, status=status)
 
     def _post_choose(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        """``{group, action, family}``: add, remove, move or clear a family of a group."""
+        """``{group, action, family, order?}``: add, remove, move or clear a family of a group."""
         group, action, family = body.get("group"), body.get("action"), body.get("family")
+        order = body.get("order")
         if not isinstance(group, str) or not isinstance(action, str):
             return 400, {"error": "body must be {group: str, action: str, family: str}"}
         if family is not None and not isinstance(family, str):
             return 400, {"error": "family must be a string"}
-        return self._state.choose(group, family, action)
+        if order is not None and not _is_string_list(order):
+            return 400, {"error": "order must be a list of strings"}
+        return self._state.choose(group, family, action, order)
 
     def _post_glyph(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-        """``{codepoint, family|null}``: pin a code point to a family or release it."""
+        """``{codepoint, family|null, group?, order?}``: pin a code point or release it."""
         codepoint, family = body.get("codepoint"), body.get("family")
+        group, order = body.get("group"), body.get("order")
         if not isinstance(codepoint, int) or isinstance(codepoint, bool):
             return 400, {"error": "codepoint must be an integer"}
         if family is not None and not isinstance(family, str):
             return 400, {"error": "family must be a string or null"}
-        return self._state.set_glyph(codepoint, family)
+        if group is not None and not isinstance(group, str):
+            return 400, {"error": "group must be a string"}
+        if order is not None and not _is_string_list(order):
+            return 400, {"error": "order must be a list of strings"}
+        return self._state.set_glyph(codepoint, family, group, order)
+
+    def _post_overlay_store(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+        """Handle ``{enabled, orders}``: keep the overlay orders in the toml, or remove them."""
+        enabled, orders = body.get("enabled"), body.get("orders")
+        if not isinstance(enabled, bool) or not _is_orders(orders):
+            return 400, {"error": "enabled must be a boolean and orders a map of id to families"}
+        return self._state.set_overlay_store(enabled=enabled, orders=orders)
 
     def _post_style(self, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
         """``{style, family, file|null}``: map an output style of a family to a file."""

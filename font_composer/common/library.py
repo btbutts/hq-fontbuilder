@@ -18,25 +18,39 @@ family labels to style files with the classes here.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
+from typing import TYPE_CHECKING
 
-from font_composer.common.groups import GROUPS, GlyphGroup, coverage
 from font_composer.common.inspect import FontError, FontInfo, looks_like_font, read_font
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
+
+    from font_composer.common.groups import GlyphGroup
 
 REGULAR_WEIGHT = 400
 
 
 @dataclass(frozen=True)
 class StyleEntry:
-    """One readable style file of a family, with its per-group coverage."""
+    """One readable style file of a family."""
 
     info: FontInfo
-    group_coverage: dict[str, tuple[int, int]]
 
     @property
     def file_name(self) -> str:
         """The file name relative to its family folder."""
         return self.info.path.name
+
+    @cached_property
+    def ordered(self) -> tuple[int, ...]:
+        """The code points of the file, sorted."""
+        return tuple(sorted(self.info.codepoints))
+
+    def coverage(self, group: GlyphGroup) -> tuple[int, int]:
+        """Return ``(present, total)`` of the group's code points this file holds."""
+        return group.count_in(self.info.codepoints, self.ordered), group.total
 
 
 @dataclass(frozen=True)
@@ -74,17 +88,17 @@ class Family:
         reference = self.regular_style()
         if reference is None:
             return 0, group.total
-        return reference.group_coverage[group.id]
+        return reference.coverage(group)
 
-    def uneven_groups(self) -> frozenset[str]:
-        """Return the ids of the groups on which the styles of this family disagree.
+    def uneven_groups(self, groups: Iterable[GlyphGroup]) -> frozenset[str]:
+        """Return the ids of those groups on which the styles of this family disagree.
 
         Styles disagree when they hold different sets of the group's code points, not
         only different numbers of them.
         """
         return frozenset(
             group.id
-            for group in GROUPS
+            for group in groups
             if len({group.codepoint_set & style.info.codepoints for style in self.styles}) > 1
         )
 
@@ -129,6 +143,5 @@ def _scan_family(folder: Path) -> Family:
         if isinstance(result, FontError):
             errors.append(result)
         else:
-            group_coverage = {group.id: coverage(result.codepoints, group) for group in GROUPS}
-            styles.append(StyleEntry(info=result, group_coverage=group_coverage))
+            styles.append(StyleEntry(info=result))
     return Family(label=folder.name, styles=tuple(styles), errors=tuple(errors))

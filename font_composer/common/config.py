@@ -34,7 +34,7 @@ import tomlkit
 from tomlkit.exceptions import TOMLKitError
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, MutableMapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, MutableMapping, Sequence
 
 _FileStamp = tuple[int, int]
 
@@ -43,6 +43,15 @@ _PORT_LIMIT = 65536
 _CODE_POINT_KEY = re.compile(r"^U\+([0-9A-Fa-f]{4,6})$")
 
 DEFAULT_STYLES = ("Regular", "Bold")
+_GENERATED_NOTE = (
+    "Managed by font_composer from the category overlay: the console rewrites this table.",
+    "Put your own overrides in [glyphs]. Each entry lists the families that have the",
+    "glyph; the first serves it and the others are the fallbacks of a style that lacks it.",
+)
+_OVERLAY_NOTE = (
+    "The orders of the category overlay, kept so another browser shows them. Optional;",
+    "the build ignores this table.",
+)
 _HEADER = """\
 font-composer configuration. The web console writes [groups] (the families of each glyph
 group, in inheritance order), [glyphs] (single code points pinned to a family), [styles.*]
@@ -134,6 +143,7 @@ class Config:
         self.path = path
         self.data = data
         self._loaded_stamp = _stamp(path)
+        self.overlay = OverlayTables(self)
 
     @classmethod
     def load(cls, path: Path, default_base: str = "") -> Config:
@@ -363,3 +373,81 @@ class Config:
             message = f"cannot write {self.path}: {exc}"
             raise ConfigError(message) from exc
         self._loaded_stamp = _stamp(self.path)
+
+
+class OverlayTables:
+    """The tables the category overlay adds to the configuration, read and written by name.
+
+    ``[generated_glyphs]`` holds the pins written from an overlay order (code point -> the
+    families that have the glyph, the first serves it); ``[overlay_orders]`` is optional and
+    keeps the orders for other browsers. Mutators are called from inside
+    :meth:`Config.update`, like those of :class:`Config`.
+    """
+
+    def __init__(self, config: Config) -> None:
+        """Work on the data of ``config`` (read at each call: the file may be re-read)."""
+        self._config = config
+
+    @property
+    def pins(self) -> dict[int, list[str]]:
+        """The ``[generated_glyphs]`` entries as code point -> families, first serves."""
+        table = self._config.data.get("generated_glyphs")
+        result: dict[int, list[str]] = {}
+        if not isinstance(table, dict):
+            return result
+        for key, value in table.items():
+            match = _CODE_POINT_KEY.match(str(key))
+            families = _family_list(value)
+            if match and families:
+                result[int(match.group(1), 16)] = families
+        return result
+
+    def replace_pins(
+        self, codepoints: Iterable[int], pins: Mapping[int, Sequence[str]],
+    ) -> None:
+        """Drop the generated pins of some code points and write ``pins`` in their place."""
+        data = self._config.data
+        table = data.get("generated_glyphs")
+        if not isinstance(table, dict):
+            if not pins:
+                return
+            table = tomlkit.table()
+            for line in _GENERATED_NOTE:
+                table.add(tomlkit.comment(line))
+            data["generated_glyphs"] = table
+        for codepoint in codepoints:
+            table.pop(f"U+{codepoint:04X}", None)
+        for codepoint, families in sorted(pins.items()):
+            table[f"U+{codepoint:04X}"] = list(families)
+
+    @property
+    def orders(self) -> dict[str, list[str]] | None:
+        """The stored overlay orders, or None while ``[overlay_orders]`` does not exist."""
+        table = self._config.data.get("overlay_orders")
+        if not isinstance(table, dict):
+            return None
+        return {str(key): families for key, value in table.items()
+                if (families := _family_list(value))}
+
+    def set_orders(self, orders: Mapping[str, Sequence[str]] | None) -> None:
+        """Create ``[overlay_orders]`` from ``orders``, or (``None``) remove it."""
+        if orders is None:
+            self._config.data.pop("overlay_orders", None)
+            return
+        table = tomlkit.table()
+        for line in _OVERLAY_NOTE:
+            table.add(tomlkit.comment(line))
+        for group_id, order in orders.items():
+            if order:
+                table[group_id] = list(order)
+        self._config.data["overlay_orders"] = table
+
+    def set_order(self, group_id: str, order: Sequence[str]) -> None:
+        """Update one stored overlay order; does nothing while the table does not exist."""
+        table = self._config.data.get("overlay_orders")
+        if not isinstance(table, dict):
+            return
+        if order:
+            table[group_id] = list(order)
+        else:
+            table.pop(group_id, None)

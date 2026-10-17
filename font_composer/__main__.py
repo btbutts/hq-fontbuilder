@@ -2,7 +2,7 @@
 
 Commands:
 
-* ``inspect FILE...`` — print each font's metadata and per-group coverage.
+* ``inspect FILE...`` — print each font's metadata and per-block coverage.
 * ``compose [--fonts-dir DIR] [--output-dir DIR] [--config FILE] [--host H] [--port N]``
   — run the font-composer web console (watches the fonts directory, hosts the
   selection UI, writes the config). Every option has a default, so ``compose`` alone
@@ -25,8 +25,9 @@ from typing import TYPE_CHECKING
 
 from font_composer import __version__
 from font_composer.builder.build import ON_MISSING, BuildOptions, run_build
+from font_composer.common.blocks import ensure_blocks_list
 from font_composer.common.config import Config, ConfigError
-from font_composer.common.groups import GROUPS, coverage
+from font_composer.common.groups import Catalog, coverage
 from font_composer.common.inspect import FontError, FontInfo, read_font
 from font_composer.common.library import FontLibrary
 from font_composer.common.names import ensure_names_list
@@ -131,7 +132,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     inspect_parser = subparsers.add_parser(
         "inspect", help="print one font's coverage",
-        description="Print each font's metadata and per-group coverage.",
+        description="Print each font's metadata and per-block coverage.",
         epilog=f"example:\n  {_PROG} inspect fonts/DejaVu/DejaVuSansMono.ttf\n",
         formatter_class=argparse.RawDescriptionHelpFormatter)
     inspect_parser.add_argument("files", nargs="+", type=Path, help="font files to read")
@@ -191,7 +192,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _print_font_info(info: FontInfo) -> None:
+def _print_font_info(info: FontInfo, catalog: Catalog) -> None:
     """Print one font's metadata and coverage table."""
     names, metrics = info.names, info.metrics
     print(f"{info.path}")
@@ -213,24 +214,26 @@ def _print_font_info(info: FontInfo) -> None:
                                for advance, count in info.advance_histogram.items())
         print(f"  advance histogram: {histogram}")
     print(f"  code points: {len(info.codepoints)}")
-    print("  group coverage:")
-    width = max(len(group.id) for group in GROUPS)
-    for group in GROUPS:
-        present, total = coverage(info.codepoints, group)
+    print("  block coverage:")
+    shown = [(group, coverage(info.codepoints, group)) for group in catalog.blocks]
+    shown = [(group, cell) for group, cell in shown if cell[0]]
+    width = max((len(group.id) for group, _ in shown), default=0)
+    for group, (present, total) in shown:
         marker = " (atomic)" if group.atomic else ""
         print(f"    {group.id:<{width}}  {present:>5}/{total}{marker}")
 
 
 def run_inspect(files: Sequence[Path]) -> int:
-    """Print the metadata and per-group coverage of each font file."""
+    """Print the metadata and per-block coverage of each font file."""
     status = 0
+    catalog = Catalog.load()
     for path in files:
         result = read_font(path)
         if isinstance(result, FontError):
             print(f"{result.path}\n  ERROR: {result.reason}")
             status = 1
         else:
-            _print_font_info(result)
+            _print_font_info(result, catalog)
     return status
 
 
@@ -294,14 +297,20 @@ def run_compose(args: argparse.Namespace) -> int:
     return 0
 
 
+def _warn(message: str) -> None:
+    """Print a message about a file that could not be fetched."""
+    print(message, file=sys.stderr)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the command line tool and return its exit status."""
     args = parse_args(argv)
     if args.command == "inspect":
         return run_inspect(args.files)
     if args.command in {"compose", "build"}:
-        # glyph names for the console's tooltips and the build's reports; not fatal
-        ensure_names_list(say=lambda message: print(message, file=sys.stderr))
+        # glyph names and block categories for the console and the build; not fatal here
+        ensure_names_list(say=_warn)
+        ensure_blocks_list(say=_warn)
     if args.command == "compose":
         return run_compose(args)
     return run_build(BuildOptions(args.config, args.fonts_dir, args.output_dir,

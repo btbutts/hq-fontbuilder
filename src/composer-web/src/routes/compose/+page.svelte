@@ -11,6 +11,7 @@
 	} from '#lib/data/api.ts';
 	import CtrlButton from '#lib/button/CtrlButton.svelte';
 	import { consoleStore } from '#lib/data/console.svelte.ts';
+	import { overlayStore } from '#lib/data/overlay.svelte.ts';
 	import Dropdown from '#lib/dropdown/Dropdown.svelte';
 	import { familyColor, familyCssName, fontFaceRules, installFontFaces } from '#lib/glyph/families.ts';
 	import GlyphChooser, { type Candidate } from '#lib/glyph/GlyphChooser.svelte';
@@ -48,10 +49,11 @@
 	// made here or elsewhere, a font added, the configuration edited by hand).
 	$effect(() => {
 		const requested = groupId;
+		const order = group?.overlay ? overlayStore.orderOf(group, snapshot) : undefined;
 		void snapshot?.version;
 		if (!requested) return;
 		let cancelled = false;
-		fetchComposition(requested)
+		fetchComposition(requested, order)
 			.then((payload) => {
 				if (cancelled) return;
 				composition = payload;
@@ -65,10 +67,12 @@
 		};
 	});
 
+	const shownFamilies = $derived([...(current?.order ?? []), ...(current?.extra ?? [])]);
+
 	$effect(() => {
 		installFontFaces(
 			FONT_FACE_ELEMENT_ID,
-			current ? fontFaceRules(current.order, current.fonts) : ''
+			current ? fontFaceRules(shownFamilies, current.fonts) : ''
 		);
 	});
 
@@ -82,7 +86,7 @@
 
 	function toCell(glyph: ResolvedGlyph | undefined, codepoint: number): LayoutCell {
 		if (!glyph || !current) return { codepoint, present: false };
-		const index = current.order.indexOf(glyph.source);
+		const index = shownFamilies.indexOf(glyph.source);
 		return {
 			codepoint,
 			present: true,
@@ -113,8 +117,10 @@
 	let actionError = $state<string | null>(null);
 
 	async function change(action: ChooseAction, family: string | null): Promise<void> {
-		const result = await postChoose(groupId, action, family);
+		const order = group?.overlay ? overlayStore.orderOf(group, snapshot) : undefined;
+		const result = await postChoose(groupId, action, family, order);
 		actionError = result.ok ? null : (result.error ?? 'unknown error');
+		if (result.ok && group?.overlay && result.order) overlayStore.setOrder(groupId, result.order);
 		await consoleStore.refresh();
 	}
 
@@ -135,7 +141,7 @@
 	const chooserGlyph = $derived(chooser ? bySource.get(chooser.codepoint) : undefined);
 	const candidates = $derived<Candidate[]>(
 		(chooserGlyph?.candidates ?? []).map((family) => {
-			const index = current?.order.indexOf(family) ?? 0;
+			const index = Math.max(shownFamilies.indexOf(family), 0);
 			return {
 				family,
 				label: current?.familyNames[family] ?? family,
@@ -147,7 +153,13 @@
 
 	async function choose(family: string | null): Promise<void> {
 		if (!chooser) return;
-		const result = await postGlyph(chooser.codepoint, family);
+		const overlayGroup = group?.overlay ? group : null;
+		const result = await postGlyph(
+			chooser.codepoint,
+			family,
+			overlayGroup?.id,
+			overlayGroup ? overlayStore.orderOf(overlayGroup, snapshot) : undefined
+		);
 		actionError = result.ok ? null : (result.error ?? 'unknown error');
 		chooser = null;
 		await consoleStore.refresh();
@@ -160,7 +172,7 @@
 
 <PageHeader>
 	<div class="flex items-center justify-between gap-4">
-		<CtrlButton function="nav.BACK" onclick={() => goto('/')}>Coverage Table</CtrlButton>
+		<CtrlButton function="nav.BACK" onclick={() => goto('/', { reset: false })}>Coverage Table</CtrlButton>
 		<ThemeToggle />
 	</div>
 
@@ -172,10 +184,10 @@
 		<p class="mt-4 mb-0 {colors.textSecondary}">{loadError ?? 'loading…'}</p>
 	{:else}
 		<h1 class="mt-4 mb-1 text-[1.4rem] font-semibold">
-			{group.id}{group.atomic ? ' (atomic)' : ''} — Combined Result
+			{group.label}{group.atomic ? ' (atomic)' : ''} — Combined Result
 		</h1>
 		<p class="mt-0 mb-0 max-w-5xl {colors.textSecondary}">
-			{group.label}; {group.total - current.missing} of {group.total} code points have a glyph.
+			{group.total - current.missing} of {group.total} code points have a glyph.
 			{#if group.atomic}
 				An atomic group comes from one family, so its glyphs cannot be mixed.
 			{:else}
@@ -326,7 +338,7 @@
 			<p class="m-0 {colors.textError}">no family of this group has a glyph in it</p>
 		{:else}
 			<GlyphGrid
-				groupId={group.id}
+				namedRows={group.rows}
 				{cells}
 				mode={layoutMode}
 				fontFamily={familyCssName(0)}

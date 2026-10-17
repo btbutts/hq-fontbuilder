@@ -14,7 +14,7 @@
     "sync": "svelte-kit sync",
     "prepare": "bun --bun run sync",
     "check": "bun --bun run sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "bun test ./src/lib/glyph/glyphLayout.test.ts ./src/lib/table/columnOrder.test.ts"
+    "test": "bun test ./src/lib/glyph/glyphLayout.test.ts ./src/lib/table/columnOrder.test.ts ./src/lib/data/overlayStorage.test.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^4.0.0",
