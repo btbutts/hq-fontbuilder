@@ -365,3 +365,32 @@ export async function postOverlayStore(
 ): Promise<ChooseResult> {
 	return result(await post('/api/overlay-store', { enabled, orders }));
 }
+
+/** One written font of a build proof: where to load it from, its cell, and what does not join. */
+export interface ProofFont {
+	style: string;
+	file: string;
+	url: string;
+	/** em */
+	cell: { width: number; ascent: number; descent: number };
+	/** the font's own units, which `outlines` are in */
+	units: { upm: number; advance: number; ascent: number; descent: number };
+	/** code point -> SVG path of the box and block glyphs, y pointing up */
+	outlines: Record<string, string>;
+	seams: ProofSeam[];
+}
+
+export interface ProofSeam {
+	/** em: how far the glyphs of this line miss each other */
+	spread: number;
+	/** an arc, a diagonal or a dashed line: a miss is only a warning */
+	soft: boolean;
+	members: { codepoint: number; edge: string; start: number }[];
+}
+
+/** What `build --show-proof` serves; only that command answers it. */
+export async function fetchProof(): Promise<{ fonts: ProofFont[] }> {
+	const response = await fetch('/api/proof');
+	if (!response.ok) throw new Error(`/api/proof: ${response.status}`);
+	return (await response.json()) as { fonts: ProofFont[] };
+}

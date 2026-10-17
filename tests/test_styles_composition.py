@@ -1,4 +1,4 @@
-"""Tests for the default style rules (common.styles) and inheritance (common.composition)."""
+"""Tests for the default style rules (common.fonts.styles) and inheritance (common.composition)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import pytest
 from support import FontSpec, NameSpec, build_font
 
 from font_composer.common.composition import resolve_group
-from font_composer.common.groups import GlyphGroup
-from font_composer.common.library import FontLibrary
-from font_composer.common.styles import (
+from font_composer.common.fonts.library import FontLibrary
+from font_composer.common.fonts.styles import (
     parse_style_name,
     resolve_style,
     similar_weight,
     style_type_name,
 )
+from font_composer.common.unicode.groups import GlyphGroup
 
 if TYPE_CHECKING:
     from pathlib import Path

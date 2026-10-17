@@ -13,7 +13,7 @@
  * Pure functions, no DOM: `glyphLayout.test.ts` exercises them with `node --test`.
  */
 
-import type { FitInfo, NamedRow } from '../data/api';
+import type { FitInfo, NamedRow } from '../data/api.ts';
 
 /**
  * A group up to this size is drawn whole, absent code points as hatched cells. A larger

@@ -2,7 +2,7 @@
 	import IconArrowBadgeDown from '@tabler/icons-svelte/icons/arrow-badge-down-filled';
 	import IconArrowBadgeRight from '@tabler/icons-svelte/icons/arrow-badge-right-filled';
 	import { tick, type Snippet } from 'svelte';
-	import { colors } from '#lib/styles.svelte.ts';
+	import { colors } from '../styles.svelte.ts';
 
 	/**
 	 * A line of text with an arrow before it that opens and closes the element it controls.

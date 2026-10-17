@@ -7,9 +7,9 @@
 		type CellGeometry,
 		type LayoutCell,
 		type LayoutMode
-	} from './glyphLayout';
-	import { colors } from '../styles.svelte';
-	import type { NamedRow } from '../data/api';
+	} from './glyphLayout.ts';
+	import { colors } from '../styles.svelte.ts';
+	import type { NamedRow } from '../data/api.ts';
 
 	interface Props {
 		/** rows of the group that are not 16 wide */

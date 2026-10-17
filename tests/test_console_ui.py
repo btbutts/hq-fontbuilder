@@ -1,4 +1,4 @@
-"""Tests for font_composer.composer.web.console_ui: sizing, tail window, redraws, keys."""
+"""Tests for font_composer.common.cli.console_ui: sizing, tail window, redraws, keys."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from font_composer.composer.web.console_ui import (
+from font_composer.common.cli.console_ui import (
     PROMPT,
     Action,
     LiveView,

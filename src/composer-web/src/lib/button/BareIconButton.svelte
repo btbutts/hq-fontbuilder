@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { colors } from '../styles.svelte';
-	import { tip } from '../tooltip/tooltip';
-	import type { IconComponent } from './presets';
+	import { colors } from '../styles.svelte.ts';
+	import { tip } from '../tooltip/tooltip.ts';
+	import type { IconComponent } from './presets.ts';
 
 	/**
 	 * A button that is only an icon: no box, border or background (the pencil of a header

@@ -9,8 +9,8 @@ from typing import Any
 from fontTools.fontBuilder import FontBuilder
 from fontTools.pens.ttGlyphPen import TTGlyphPen
 
-from font_composer.common.blocks import parse_blocks
-from font_composer.common.groups import Catalog, build_catalog
+from font_composer.common.unicode.blocks import parse_blocks
+from font_composer.common.unicode.groups import Catalog, build_catalog
 
 
 @dataclass(frozen=True)

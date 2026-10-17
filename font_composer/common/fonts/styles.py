@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Collection, Mapping
 
-    from font_composer.common.library import Family, FontLibrary, StyleEntry
+    from font_composer.common.fonts.library import Family, FontLibrary, StyleEntry
 
 _ITALIC_WORDS = ("italic", "oblique", "slanted", "inclined")
 

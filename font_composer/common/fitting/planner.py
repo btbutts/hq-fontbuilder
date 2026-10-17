@@ -13,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from font_composer.common.fit import (
+from font_composer.common.fitting.fit import (
     BLEED,
     EPS,
     Box,
@@ -28,13 +28,13 @@ from font_composer.common.fit import (
     plan_fit,
     plan_in_class,
 )
-from font_composer.common.ink import read_ink
+from font_composer.common.fonts.ink import read_ink
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from font_composer.common.groups import Catalog, GlyphGroup
-    from font_composer.common.library import Family, StyleEntry
+    from font_composer.common.fonts.library import Family, StyleEntry
+    from font_composer.common.unicode.groups import Catalog, GlyphGroup
 
 
 @dataclass(frozen=True)

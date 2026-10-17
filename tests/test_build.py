@@ -11,7 +11,7 @@ from fontTools.ttLib import TTFont
 from support import FontSpec, MetricSpec, NameSpec, build_font, sample_catalog
 
 from font_composer.builder.build import BuildOptions, run_build
-from font_composer.common.groups import build_catalog
+from font_composer.common.unicode.groups import build_catalog
 
 ARROW_LEFT, ARROW_UP, BOX_VERTICAL, FULL_BLOCK = 0x2190, 0x2191, 0x2502, 0x2588
 REGULAR_WEIGHT = 400

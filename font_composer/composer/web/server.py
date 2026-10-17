@@ -47,42 +47,34 @@ Routes:
 
 The server listens on ``localhost`` (both ``127.0.0.1`` and ``::1``) unless told
 otherwise: the console writes a file on this machine and has no authentication. The
-port is chosen by :mod:`font_composer.composer.web.ports`.
+port is chosen by :mod:`font_composer.common.cli.ports`.
 
 The state the routes serialize lives in :mod:`font_composer.composer.state`.
 """
 
 from __future__ import annotations
 
-import contextlib
 import errno
 import json
 import socket
-import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, TypeGuard, cast
 from urllib.parse import parse_qs, unquote, urlparse
 
-from font_composer.common.config import Config, ConfigError
-from font_composer.common.inspect import looks_like_font
-from font_composer.composer.state import ConsoleState
-from font_composer.composer.watcher import DirectoryWatcher
-from font_composer.composer.web.console_ui import (
-    PROMPT,
-    Action,
-    KeyReader,
-    LiveView,
-    StderrCapture,
-    action_for_key,
-)
-from font_composer.composer.web.ports import (
+from font_composer.common.cli.console_ui import Action
+from font_composer.common.cli.ports import (
     LOCALHOST,
     PortUnavailableError,
     local_addresses,
     pick_port,
 )
+from font_composer.common.cli.session import present
+from font_composer.common.config import Config, ConfigError
+from font_composer.common.fonts.inspect import looks_like_font
+from font_composer.composer.state import ConsoleState
+from font_composer.composer.watcher import DirectoryWatcher
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -104,8 +96,6 @@ _FONT_TYPES = {".ttf": "font/ttf", ".otf": "font/otf"}
 _FONT_URL_PARTS = 2  # /fonts/<family>/<filename>
 
 _TRUE_FLAGS = ("1", "true")
-
-_KEY_POLL_SECONDS = 0.1  # also how often the view is redrawn at most
 
 
 class ConsoleHTTPServer(ThreadingHTTPServer):
@@ -136,15 +126,14 @@ def _is_orders(value: Any) -> TypeGuard[dict[str, list[str]]]:
         isinstance(key, str) and _is_string_list(item) for key, item in value.items())
 
 
-class _Handler(BaseHTTPRequestHandler):
-    """Route requests to the static files, the JSON API or the font bytes."""
+class StaticHandler(BaseHTTPRequestHandler):
+    """Answer GET requests with the compiled SPA; subclasses add their own routes.
+
+    It is also the base of the page a build proof is shown on (see
+    :mod:`font_composer.composer.web.proof`).
+    """
 
     # -- helpers ---------------------------------------------------------
-
-    @property
-    def _state(self) -> ConsoleState:
-        """The shared console state attached to the server instance."""
-        return cast("ConsoleHTTPServer", self.server).state
 
     def _send_json(self, payload: dict[str, Any], status: int = 200) -> None:
         body = json.dumps(payload).encode("utf-8")
@@ -180,6 +169,66 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    # -- routing ---------------------------------------------------------
+
+    def _route_get(self) -> None:
+        """Dispatch GET requests: the SPA only."""
+        self._get_static(urlparse(self.path).path)
+
+    def _route_post(self) -> None:
+        """Refuse POST requests: there is nothing to change."""
+        self._send_json({"error": "not found"}, status=404)
+
+    def _get_static(self, path: str) -> None:
+        """Serve a static file by URL path, falling back to ``index.html``.
+
+        The SPA is compiled into the static directory, so most paths map to a real
+        file; directories get their ``index.html`` and client-side routes such as
+        ``/group`` get the SPA fallback page ``200.html``; a missing file with an
+        extension is a 404. Paths that resolve outside the static directory are a
+        traversal attempt. When no compiled page exists at all, the SPA was never
+        built on this checkout.
+        """
+        static_root = STATIC_DIR.resolve()
+        target = (static_root / unquote(path).lstrip("/")).resolve()
+        if not target.is_relative_to(static_root):
+            self._send_json({"error": f"invalid path: {path}"}, status=400)
+            return
+        if target.is_dir():
+            target /= "index.html"
+        if not target.is_file():
+            if target.suffix:
+                self._send_json({"error": f"not found: {path}"}, status=404)
+                return
+            target = static_root / "200.html"
+        if not target.is_file():
+            self._send_not_built()
+            return
+        self._send_file(target, _STATIC_TYPES.get(target.suffix, "application/octet-stream"))
+
+    def __getattr__(self, name: str) -> Any:
+        """Map the stdlib's ``do_<METHOD>`` lookup onto the routing methods.
+
+        ``BaseHTTPRequestHandler`` calls ``getattr(self, "do_GET")`` etc.; answering
+        through ``__getattr__`` keeps those HTTP-style names out of the class body.
+        """
+        if name == "do_GET":
+            return self._route_get
+        if name == "do_POST":
+            return self._route_post
+        raise AttributeError(name)
+
+
+class _Handler(StaticHandler):
+    """Route requests to the static files, the JSON API or the font bytes."""
+
+    # -- helpers ---------------------------------------------------------
+
+    @property
+    def _state(self) -> ConsoleState:
+        """The shared console state attached to the server instance."""
+        return cast("ConsoleHTTPServer", self.server).state
 
     # -- routing ---------------------------------------------------------
 
@@ -322,33 +371,6 @@ class _Handler(BaseHTTPRequestHandler):
             return 400, {"error": "body must be {style: str, name: str|null}"}
         return self._state.set_style_name(style, name)
 
-    def _get_static(self, path: str) -> None:
-        """Serve a static file by URL path, falling back to ``index.html``.
-
-        The SPA is compiled into the static directory, so most paths map to a real
-        file; directories get their ``index.html`` and client-side routes such as
-        ``/group`` get the SPA fallback page ``200.html``; a missing file with an
-        extension is a 404. Paths that resolve outside the static directory are a
-        traversal attempt. When no compiled page exists at all, the SPA was never
-        built on this checkout.
-        """
-        static_root = STATIC_DIR.resolve()
-        target = (static_root / unquote(path).lstrip("/")).resolve()
-        if not target.is_relative_to(static_root):
-            self._send_json({"error": f"invalid path: {path}"}, status=400)
-            return
-        if target.is_dir():
-            target /= "index.html"
-        if not target.is_file():
-            if target.suffix:
-                self._send_json({"error": f"not found: {path}"}, status=404)
-                return
-            target = static_root / "200.html"
-        if not target.is_file():
-            self._send_not_built()
-            return
-        self._send_file(target, _STATIC_TYPES.get(target.suffix, "application/octet-stream"))
-
     def _get_font(self, relative: str) -> None:
         """Serve raw font bytes, only from inside a scanned family folder."""
         parts = Path(unquote(relative)).parts
@@ -364,18 +386,6 @@ class _Handler(BaseHTTPRequestHandler):
             return
         self._send_file(target, _FONT_TYPES.get(target.suffix.lower(),
                                                 "application/octet-stream"))
-
-    def __getattr__(self, name: str) -> Any:
-        """Map the stdlib's ``do_<METHOD>`` lookup onto the routing methods.
-
-        ``BaseHTTPRequestHandler`` calls ``getattr(self, "do_GET")`` etc.; answering
-        through ``__getattr__`` keeps those HTTP-style names out of the class body.
-        """
-        if name == "do_GET":
-            return self._route_get
-        if name == "do_POST":
-            return self._route_post
-        raise AttributeError(name)
 
 
 def _url_host(host: str) -> str:
@@ -429,62 +439,6 @@ def _header(host: str, port: int, bound: list[str], fonts_dir: Path, config: Con
     ]
 
 
-def _closing(action: Action) -> str:
-    """Return the closing message for the action that ended the run."""
-    return "reloading..." if action is Action.RELOAD else "stopped."
-
-
-def _next_key(keys: KeyReader) -> str | None:
-    """Wait one poll interval for a key (there may be no terminal to read from)."""
-    if keys.available:
-        return keys.read(_KEY_POLL_SECONDS)
-    threading.Event().wait(_KEY_POLL_SECONDS)
-    return None
-
-
-def _poll_actions(keys: KeyReader, view: LiveView | None) -> Action:
-    """Loop until a key asks for quit or reload; keep the view fitted to the terminal."""
-    while True:
-        key = _next_key(keys)
-        if view is not None:
-            view.tick()
-        action = action_for_key(key) if key else None
-        if action is not None:
-            return action
-
-
-def _wait_for_action(keys: KeyReader, view: LiveView | None) -> Action:
-    """Block until a key asks for quit or reload, or Ctrl-C (which quits)."""
-    try:
-        return _poll_actions(keys, view)
-    except KeyboardInterrupt:
-        return Action.QUIT
-
-
-def _present(header: list[str], notes: list[str], monitor: bool) -> Action:
-    """Show the console on the terminal until a key (or Ctrl-C) ends it; return the action."""
-    live = sys.stdout.isatty() and not monitor
-    view = LiveView(header, sys.stdout) if live else None
-    with KeyReader() as keys:
-        if view is not None:
-            for note in notes:
-                view.add(f"font_composer: {note}")
-            view.start()
-            with contextlib.redirect_stderr(StderrCapture(view.add)):
-                action = _wait_for_action(keys, view)
-            view.finish(f"font_composer: {_closing(action)}")
-            return action
-        # flush: when the output is piped (a task runner, a log file) it would not show.
-        print("\n".join(header), flush=True)
-        for note in notes:
-            print(f"font_composer: {note}", flush=True)
-        if keys.available:
-            print(PROMPT, flush=True)
-        action = _wait_for_action(keys, None)
-        print(f"\nfont_composer: {_closing(action)}", flush=True)
-        return action
-
-
 def _startup_notes(
     config: Config, chosen: int, notice: str | None, addresses: list[str], bound: list[str],
 ) -> list[str]:
@@ -512,7 +466,7 @@ def serve(
 
     ``port`` is the one the user asked for, or None to reuse the port saved in the
     configuration or pick a free one. On a terminal the output is the in-place block of
-    :mod:`font_composer.composer.web.console_ui`; ``monitor`` (or no terminal) streams
+    :mod:`font_composer.common.cli.console_ui`; ``monitor`` (or no terminal) streams
     every request line instead. Returns True when the user asked for a reload.
 
     Raises :class:`PortUnavailableError` (with a message for the user) when the port
@@ -530,7 +484,7 @@ def serve(
         threading.Thread(target=server.serve_forever, name=f"console-{server.server_address[0]}",
                          daemon=True).start()
     try:
-        action = _present(_header(host, chosen, bound, fonts_dir, config), notes, monitor)
+        action = present(_header(host, chosen, bound, fonts_dir, config), notes, monitor=monitor)
     finally:
         for server in servers:
             server.shutdown()

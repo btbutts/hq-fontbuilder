@@ -2,9 +2,9 @@
 	import { onMount } from 'svelte';
 	import CtrlButton from '../button/CtrlButton.svelte';
 	import GlyphCell from './GlyphCell.svelte';
-	import { chooserGrid, type CellGeometry } from './glyphLayout';
-	import { colors, floating } from '../styles.svelte';
-	import { unicodeNames } from '../data/unicodeNames.svelte';
+	import { chooserGrid, type CellGeometry } from './glyphLayout.ts';
+	import { colors, floating } from '../styles.svelte.ts';
+	import { unicodeNames } from '../data/unicodeNames.svelte.ts';
 
 	export interface Candidate {
 		family: string;

@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from support import build_font, sample_catalog
 
 from font_composer.common.composition import GroupComposition, generate_pins, resolve_group
-from font_composer.common.library import FontLibrary
+from font_composer.common.fonts.library import FontLibrary
 
 if TYPE_CHECKING:
     from pathlib import Path

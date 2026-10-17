@@ -7,7 +7,7 @@
  *   them off. Off by default: glyphs are shown as the fit will place them.
  */
 
-import { FULL_GRID_MAX, type LayoutMode } from '../glyph/glyphLayout';
+import { FULL_GRID_MAX, type LayoutMode } from '../glyph/glyphLayout.ts';
 
 const WRAP_STORAGE_KEY = 'fc-glyph-wrap';
 

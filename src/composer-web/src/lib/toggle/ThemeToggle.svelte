@@ -1,6 +1,6 @@
 <script lang="ts">
 	import IconSunMoon from '@tabler/icons-svelte/icons/sun-moon';
-	import { theme } from '../styles.svelte';
+	import { theme } from '../styles.svelte.ts';
 	import Toggle from './Toggle.svelte';
 </script>
 

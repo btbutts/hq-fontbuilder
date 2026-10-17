@@ -1,16 +1,13 @@
 <script lang="ts">
 	import IconEditBulk from '@tabler/icons-svelte/icons/edit-bulk';
 	import IconEqualNot from '@tabler/icons-svelte/icons/equal-not';
-	import BareIconButton from '#lib/button/BareIconButton.svelte';
-	import { overlayStore } from '#lib/data/overlay.svelte.ts';
+	import {
+		BareIconButton, colors, ColumnOrder, consoleStore, overlayStore, postChoose,
+		ReorderableColumns, tip,
+		type ComposerState, type FamilyInfo, type GroupInfo
+	} from '#lib';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
-	import { postChoose, type ComposerState, type FamilyInfo, type GroupInfo } from '#lib/data/api.ts';
-	import { consoleStore } from '#lib/data/console.svelte.ts';
-	import { colors } from '#lib/styles.svelte.ts';
-	import { ColumnOrder } from '#lib/table/columnOrder.svelte.ts';
-	import ReorderableColumns from '#lib/table/ReorderableColumns.svelte';
-	import { tip } from '#lib/tooltip/tooltip.ts';
 
 	interface Props {
 		snapshot: ComposerState;

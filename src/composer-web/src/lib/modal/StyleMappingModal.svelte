@@ -3,14 +3,14 @@
 	import BareIconButton from '../button/BareIconButton.svelte';
 	import CtrlButton from '../button/CtrlButton.svelte';
 	import InlineRename from '../button/InlineRename.svelte';
-	import { postStyle, postStyleName, type StyleFileInfo } from '../data/api';
-	import { consoleStore } from '../data/console.svelte';
+	import { postStyle, postStyleName, type StyleFileInfo } from '../data/api.ts';
+	import { consoleStore } from '../data/console.svelte.ts';
 	import Dropdown from '../dropdown/Dropdown.svelte';
 	import { ColumnOrder } from '../table/columnOrder.svelte.ts';
 	import ReorderableColumns from '../table/ReorderableColumns.svelte';
-	import { lockScroll } from './scrollLock';
+	import { lockScroll } from './scrollLock.ts';
 	import StyleTypesModal from './StyleTypesModal.svelte';
-	import { colors } from '../styles.svelte';
+	import { colors } from '../styles.svelte.ts';
 
 	interface Props {
 		onclose: () => void;

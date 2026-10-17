@@ -1,10 +1,10 @@
 <script lang="ts">
-	import type { FitInfo } from '../data/api';
-	import { describeFit } from './fitDisplay';
-	import { slotWidth, type CellGeometry } from './glyphLayout';
-	import { colors } from '../styles.svelte';
-	import { tip } from '../tooltip/tooltip';
-	import { unicodeNames } from '../data/unicodeNames.svelte';
+	import type { FitInfo } from '../data/api.ts';
+	import { describeFit } from './fitDisplay.ts';
+	import { slotWidth, type CellGeometry } from './glyphLayout.ts';
+	import { colors } from '../styles.svelte.ts';
+	import { tip } from '../tooltip/tooltip.ts';
+	import { unicodeNames } from '../data/unicodeNames.svelte.ts';
 
 	interface Props {
 		codepoint: number;

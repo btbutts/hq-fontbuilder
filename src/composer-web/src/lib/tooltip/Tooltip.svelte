@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { colors, floating } from '../styles.svelte';
-	import { TIP_BODY_ATTRIBUTE, TIP_TITLE_ATTRIBUTE, tipRuns } from './tooltip';
+	import { colors, floating } from '../styles.svelte.ts';
+	import { TIP_BODY_ATTRIBUTE, TIP_TITLE_ATTRIBUTE, tipRuns } from './tooltip.ts';
 
 	// The one tooltip of the page. Elements describe themselves with `tip()`; this finds
 	// the nearest described element under the pointer (or the focused one) and shows it.

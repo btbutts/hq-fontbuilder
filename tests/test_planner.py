@@ -1,4 +1,4 @@
-"""Tests for font_composer.common.planner: how the glyphs of a block are fitted to the base cell."""
+"""Tests for common.fitting.planner: how the glyphs of a block are fitted to the base cell."""
 
 from __future__ import annotations
 
@@ -7,14 +7,14 @@ from typing import TYPE_CHECKING
 import pytest
 from support import FontSpec, MetricSpec, build_font, sample_catalog
 
-from font_composer.common.fit import CellSpec
-from font_composer.common.library import FontLibrary
-from font_composer.common.planner import FitTarget, plan_glyphs
+from font_composer.common.fitting.fit import CellSpec
+from font_composer.common.fitting.planner import FitTarget, plan_glyphs
+from font_composer.common.fonts.library import FontLibrary
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from font_composer.common.library import Family
+    from font_composer.common.fonts.library import Family
 
 BASE = CellSpec(width=0.6, ascent=0.8, descent=-0.2)
 TALL = FontSpec(metrics=MetricSpec(ascent=1200, descent=-300))  # a 1.5 em line, base is 1.0 em

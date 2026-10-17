@@ -18,21 +18,21 @@ This module is a thin orchestrator: it parses the command line and delegates to
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from font_composer import __version__
 from font_composer.builder.build import ON_MISSING, BuildOptions, run_build
-from font_composer.common.blocks import ensure_blocks_list
+from font_composer.common.cli.ports import PORT_RANGES, PortUnavailableError
+from font_composer.common.cli.session import reload_process
 from font_composer.common.config import Config, ConfigError
-from font_composer.common.groups import Catalog, coverage
-from font_composer.common.inspect import FontError, FontInfo, read_font
-from font_composer.common.library import FontLibrary
-from font_composer.common.names import ensure_names_list
+from font_composer.common.fonts.inspect import FontError, FontInfo, read_font
+from font_composer.common.fonts.library import FontLibrary
 from font_composer.common.paths import DEFAULT_CONFIG, DEFAULT_FONTS_DIR, DEFAULT_OUTPUT_DIR
-from font_composer.composer.web.ports import PORT_RANGES, PortUnavailableError
+from font_composer.common.unicode.blocks import ensure_blocks_list
+from font_composer.common.unicode.groups import Catalog, coverage
+from font_composer.common.unicode.names import ensure_names_list
 from font_composer.composer.web.server import DEFAULT_HOST, serve
 
 if TYPE_CHECKING:
@@ -69,6 +69,9 @@ examples:
   {_PROG} build --output-dir /tmp/fonts --on-missing nearest
       write somewhere else, and never ask: use the nearest style of a family
       that lacks one
+  {_PROG} build --show-proof
+      then serve a page that draws tables with the box glyphs of the written
+      fonts, so you can see that they join (open the address it prints)
 """
 
 _COMPOSE_DESCRIPTION = """\
@@ -189,6 +192,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="what to do when a family has no style of the wanted weight: ask on the "
              "terminal (default; the answer is saved in the config), use the nearest "
              "style, synthesize a bold from the nearest lighter one, or fail")
+    build_parser.add_argument(
+        "--show-proof", action="store_true",
+        help="after the build, serve a page that draws tables with the box glyphs of the "
+             "written fonts, so you can see that they join; the address is printed and "
+             "Ctrl-C ends it")
     return parser.parse_args(argv)
 
 
@@ -245,11 +253,6 @@ def _first_family_with_regular(fonts_dir: Path) -> str:
     return ""
 
 
-def _reload() -> None:
-    """Replace this process with a new one run with the same command line."""
-    os.execv(sys.executable, [sys.executable, "-m", "font_composer", *sys.argv[1:]])
-
-
 def _compose_config(args: argparse.Namespace) -> tuple[Config, Path]:
     """Load (or create) the configuration and settle the fonts directory.
 
@@ -293,7 +296,7 @@ def run_compose(args: argparse.Namespace) -> int:
         print(f"font_composer: cannot listen on {args.host}: {exc}", file=sys.stderr)
         return 1
     if reload:
-        _reload()
+        reload_process()
     return 0
 
 
@@ -314,7 +317,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "compose":
         return run_compose(args)
     return run_build(BuildOptions(args.config, args.fonts_dir, args.output_dir,
-                                  args.on_missing))
+                                  args.on_missing, show_proof=args.show_proof))
 
 
 if __name__ == "__main__":

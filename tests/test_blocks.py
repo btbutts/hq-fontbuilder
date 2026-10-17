@@ -1,10 +1,10 @@
-"""Tests for font_composer.common.blocks: parsing, the one-time download, lazy loading."""
+"""Tests for font_composer.common.unicode.blocks: parsing, the one-time download, lazy loading."""
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from font_composer.common.blocks import ensure_blocks_list, load_blocks, parse_blocks
+from font_composer.common.unicode.blocks import ensure_blocks_list, load_blocks, parse_blocks
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -43,11 +43,11 @@ def test_a_missing_list_is_downloaded_once(tmp_path: Path) -> None:
         calls.append(url)
         return SAMPLE.encode()
 
-    assert ensure_blocks_list(target, "https://example.invalid/Blocks.txt", fetch=fetch,
+    assert ensure_blocks_list(target, ("https://example.invalid/Blocks.txt",), fetch=fetch,
                               say=messages.append)
     assert target.read_text(encoding="utf-8") == SAMPLE
     assert not list(target.parent.glob("*.part"))
-    assert ensure_blocks_list(target, "https://example.invalid/x", fetch=fetch,
+    assert ensure_blocks_list(target, ("https://example.invalid/x",), fetch=fetch,
                               say=messages.append)
     assert calls == ["https://example.invalid/Blocks.txt"]
     assert len(messages) == 1
@@ -62,7 +62,7 @@ def test_a_failed_download_is_reported_and_not_fatal(tmp_path: Path) -> None:
         raise OSError(message)
 
     target = tmp_path / "Blocks.txt"
-    assert not ensure_blocks_list(target, "https://example.invalid/", fetch=broken,
+    assert not ensure_blocks_list(target, ("https://example.invalid/",), fetch=broken,
                                   say=messages.append)
     assert not target.exists()
     assert "block categories are unavailable" in messages[-1]

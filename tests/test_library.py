@@ -1,4 +1,4 @@
-"""Tests for the fonts-dir scan (common.library) and the console matrix (composer.state)."""
+"""Tests for the fonts-dir scan (common.fonts.library) and the console matrix (composer.state)."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 from support import FontSpec, NameSpec, build_font, sample_catalog
 
-from font_composer.common.library import REGULAR_WEIGHT, FontLibrary
+from font_composer.common.fonts.library import REGULAR_WEIGHT, FontLibrary
 from font_composer.composer.state import coverage_matrix, full_coverage_families
 
 

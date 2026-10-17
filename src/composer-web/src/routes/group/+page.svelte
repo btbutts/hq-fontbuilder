@@ -1,32 +1,14 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
-	import ConfirmModal from '#lib/modal/ConfirmModal.svelte';
-	import IconHelpCircleFilled from '@tabler/icons-svelte/icons/help-circle-filled';
 	import {
-		fetchFit,
-		fetchGlyphs,
-		postChoose,
-		type FitInfo,
-		type GlyphsPayload,
-		type GroupInfo
-	} from '#lib/data/api.js';
-	import { consoleStore } from '#lib/data/console.svelte.js';
-	import { overlayStore } from '#lib/data/overlay.svelte.ts';
-	import CtrlButton from '#lib/button/CtrlButton.svelte';
-	import { installFontFaces } from '#lib/glyph/families.js';
-	import { clippedCount } from '#lib/glyph/fitDisplay.js';
-	import GlyphGrid from '#lib/glyph/GlyphGrid.svelte';
-	import PageHeader from '#lib/layout/PageHeader.svelte';
-	import { colors } from '#lib/styles.svelte.js';
-	import StickyBar from '#lib/layout/StickyBar.svelte';
-	import ThemeToggle from '#lib/toggle/ThemeToggle.svelte';
-	import { unicodeNames } from '#lib/data/unicodeNames.svelte.js';
-	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE } from '#lib/glyph/glyphLayout.js';
-	import Toggle from '#lib/toggle/Toggle.svelte';
-	import ViewToggles from '#lib/toggle/ViewToggles.svelte';
-	import { viewOptions } from '#lib/toggle/viewOptions.svelte.js';
-	import { emphasis, tip } from '#lib/tooltip/tooltip.js';
+		clippedCount, colors, ConfirmModal, consoleStore, CtrlButton, emphasis, fetchFit,
+		fetchGlyphs, FULL_GRID_MAX, geometryFor, GlyphGrid, installFontFaces, overlayStore,
+		PAGE_SIZE, PageHeader, postChoose, StickyBar, ThemeToggle, tip, Toggle, unicodeNames,
+		viewOptions, ViewToggles,
+		type FitInfo, type GlyphsPayload, type GroupInfo
+	} from '#lib';
+	import IconHelpCircleFilled from '@tabler/icons-svelte/icons/help-circle-filled';
 
 	const GLYPH_EM_PX = 64;
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';

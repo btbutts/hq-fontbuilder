@@ -2,16 +2,10 @@
 	import { afterNavigate, beforeNavigate } from '$app/navigation';
 	import { tick } from 'svelte';
 	import IconEqualNot from '@tabler/icons-svelte/icons/equal-not';
-	import CtrlButton from '#lib/button/CtrlButton.svelte';
-	import PeekButton from '#lib/button/PeekButton.svelte';
-	import { consoleStore } from '#lib/data/console.svelte.ts';
-	import { recalledScroll, rememberScroll } from '#lib/data/mainScroll.ts';
-	import { overlayStore } from '#lib/data/overlay.svelte.ts';
-	import SelectGlyphCategories from '#lib/modal/SelectGlyphCategories.svelte';
-	import StyleMappingModal from '#lib/modal/StyleMappingModal.svelte';
-	import { colors } from '#lib/styles.svelte.ts';
-	import ThemeToggle from '#lib/toggle/ThemeToggle.svelte';
-	import { tip } from '#lib/tooltip/tooltip.ts';
+	import {
+		colors, consoleStore, CtrlButton, overlayStore, PeekButton, recalledScroll, rememberScroll,
+		SelectGlyphCategories, StyleMappingModal, ThemeToggle, tip
+	} from '#lib';
 	import GlyphFontFamilyTable from './GlyphFontFamilyTable.svelte';
 
 	let showStyleMapping = $state(false);

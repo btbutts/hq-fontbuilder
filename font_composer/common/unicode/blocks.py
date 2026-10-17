@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from font_composer.common.paths import PROJECT_ROOT
-from font_composer.common.ucd import UCD_URL, download, ensure_file
+from font_composer.common.unicode.ucd import UCD_PREFIXES, download, ensure_file
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
-UNICODE_CHAR_RANGES_URL = f"{UCD_URL}/Blocks.txt"
+UNICODE_CHAR_RANGES_URLS = tuple(f"{prefix}/Blocks.txt" for prefix in UCD_PREFIXES)
 UNICODE_CHAR_RANGES_PATH = PROJECT_ROOT / "src" / "char-sets" / "Blocks.txt"
 
 _BLOCK_LINE = re.compile(r"^([0-9A-Fa-f]{4,6})\.\.([0-9A-Fa-f]{4,6});\s*(\S.*?)\s*$")
@@ -45,13 +45,13 @@ def parse_blocks(text: str) -> tuple[Block, ...]:
 
 def ensure_blocks_list(
     path: Path = UNICODE_CHAR_RANGES_PATH,
-    url: str = UNICODE_CHAR_RANGES_URL,
+    urls: Sequence[str] = UNICODE_CHAR_RANGES_URLS,
     *,
     fetch: Callable[[str], bytes] = download,
     say: Callable[[str], None] = print,
 ) -> bool:
     """Make sure the blocks list is at ``path``, downloading it when missing."""
-    return ensure_file(path, url, "block categories", fetch=fetch, say=say)
+    return ensure_file(path, urls, "block categories", fetch=fetch, say=say)
 
 
 def load_blocks(path: Path = UNICODE_CHAR_RANGES_PATH) -> tuple[Block, ...]:

@@ -3,7 +3,7 @@
 The advance width says where the next character starts; the *ink* says what is drawn,
 and the two differ (a wide arrow, an accent above the line). Bounds come from the
 outlines with fontTools' ``BoundsPen``, so composites and CFF are handled alike; the
-result is a :class:`font_composer.common.fit.Box` in em, which :mod:`fit` judges.
+result is a :class:`font_composer.common.fitting.fit.Box` in em, which :mod:`fit` judges.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 from fontTools.pens.boundsPen import BoundsPen
 from fontTools.ttLib import TTFont
 
-from font_composer.common.fit import Box
+from font_composer.common.fitting.fit import Box
 
 if TYPE_CHECKING:
     from collections.abc import Iterable

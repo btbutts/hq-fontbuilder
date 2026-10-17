@@ -4,7 +4,7 @@
  * glyph's tooltip fills in as soon as its group's names arrive.
  */
 
-import { fetchNames } from './api';
+import { fetchNames } from './api.ts';
 
 class UnicodeNames {
 	private names = $state<Record<number, string>>({});

@@ -1,10 +1,10 @@
-"""Tests for font_composer.common.names: parsing, the one-time download, lazy loading."""
+"""Tests for font_composer.common.unicode.names: parsing, the one-time download, lazy loading."""
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from font_composer.common.names import (
+from font_composer.common.unicode.names import (
     UnicodeNames,
     ensure_names_list,
     parse_names_list,
@@ -45,12 +45,13 @@ def test_a_missing_list_is_downloaded_once(tmp_path: Path) -> None:
         calls.append(url)
         return SAMPLE.encode()
 
-    assert ensure_names_list(target, "https://example.invalid/NamesList.txt", fetch=fetch,
+    assert ensure_names_list(target, ("https://example.invalid/NamesList.txt",), fetch=fetch,
                              say=messages.append)
     assert target.read_text(encoding="utf-8") == SAMPLE
     assert calls == ["https://example.invalid/NamesList.txt"]
     assert not list(target.parent.glob("*.part"))
-    assert ensure_names_list(target, "https://example.invalid/x", fetch=fetch, say=messages.append)
+    assert ensure_names_list(target, ("https://example.invalid/x",), fetch=fetch,
+                             say=messages.append)
     assert len(calls) == 1  # already there: no second download
     assert len(messages) == 1
 
@@ -64,7 +65,7 @@ def test_a_failed_download_is_reported_and_not_fatal(tmp_path: Path) -> None:
         raise OSError(message)
 
     target = tmp_path / "NamesList.txt"
-    assert not ensure_names_list(target, "https://example.invalid/", fetch=broken,
+    assert not ensure_names_list(target, ("https://example.invalid/",), fetch=broken,
                                  say=messages.append)
     assert not target.exists()
     assert "glyph names are unavailable" in messages[-1]

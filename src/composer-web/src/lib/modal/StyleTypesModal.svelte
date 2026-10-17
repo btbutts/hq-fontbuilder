@@ -1,10 +1,10 @@
 <script lang="ts">
 	import CtrlButton from '../button/CtrlButton.svelte';
-	import { postStyleConsolidate, postStyleType } from '../data/api';
-	import { consoleStore } from '../data/console.svelte';
-	import { colors } from '../styles.svelte';
+	import { postStyleConsolidate, postStyleType } from '../data/api.ts';
+	import { consoleStore } from '../data/console.svelte.ts';
+	import { colors } from '../styles.svelte.ts';
 	import Toggle from '../toggle/Toggle.svelte';
-	import { lockScroll } from './scrollLock';
+	import { lockScroll } from './scrollLock.ts';
 
 	interface Props {
 		onclose: () => void;

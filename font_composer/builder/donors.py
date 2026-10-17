@@ -1,6 +1,6 @@
 """Choose, for every output style, the style file each donor family serves it with.
 
-The default rules are those of :mod:`font_composer.common.styles` (the same the console
+The default rules are those of :mod:`font_composer.common.fonts.styles` (the same the console
 shows): a file or style named in ``[styles.<Output>]`` wins, else the style with the same
 slant and the same (or a similar) weight. When a family has no style of the wanted weight
 (no Bold, say) the build does not quietly settle for the nearest one: it is a *gap*, and a
@@ -21,7 +21,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from font_composer.common.styles import (
+from font_composer.common.fonts.styles import (
     StyleChoice,
     StyleTarget,
     find_style,
@@ -33,7 +33,7 @@ from font_composer.common.styles import (
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from font_composer.common.library import Family, StyleEntry
+    from font_composer.common.fonts.library import Family, StyleEntry
 
 SYNTHESIZE = "synthesize"
 

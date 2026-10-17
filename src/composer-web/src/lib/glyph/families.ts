@@ -4,7 +4,7 @@
  * each family's reference style available to SVG text under a short CSS name.
  */
 
-import { colors } from '../styles.svelte';
+import { colors } from '../styles.svelte.ts';
 
 /**
  * The colour of the family at `index` of an inheritance order, from `colors.family`: a

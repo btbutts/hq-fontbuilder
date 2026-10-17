@@ -1,7 +1,7 @@
 """The console's shared state: library scan, choices, summary and version counter.
 
 The coverage matrix and the full-coverage candidate lists exist to feed the console,
-so they live here rather than in :mod:`font_composer.common.library` (which only
+so they live here rather than in :mod:`font_composer.common.fonts.library` (which only
 knows how to scan the fonts directory). :class:`ConsoleState` is what the watcher
 refreshes and what the HTTP server serializes; every successful choice saves the
 configuration and bumps the version counter the pages poll. Each snapshot also picks up
@@ -25,12 +25,10 @@ from font_composer.common.composition import (
     resolve_group,
 )
 from font_composer.common.config import DEFAULT_STYLES, Config, ConfigError
-from font_composer.common.fit import EPS, CellSpec, FitPlan
-from font_composer.common.groups import Catalog, GlyphGroup
-from font_composer.common.library import Family, FontLibrary, StyleEntry
-from font_composer.common.names import UnicodeNames
-from font_composer.common.planner import FitTarget, cell_of, plan_glyphs
-from font_composer.common.styles import (
+from font_composer.common.fitting.fit import EPS, CellSpec, FitPlan
+from font_composer.common.fitting.planner import FitTarget, cell_of, plan_glyphs
+from font_composer.common.fonts.library import Family, FontLibrary, StyleEntry
+from font_composer.common.fonts.styles import (
     find_style,
     is_included,
     output_styles,
@@ -40,6 +38,8 @@ from font_composer.common.styles import (
     style_name_problem,
     style_options,
 )
+from font_composer.common.unicode.groups import Catalog, GlyphGroup
+from font_composer.common.unicode.names import UnicodeNames
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence

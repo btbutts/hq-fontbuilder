@@ -133,7 +133,8 @@ In the console:
   is the family currently chosen for that group.
 * The categories are the **Unicode blocks** of the Unicode Character Database's
   `Blocks.txt` (downloaded to `src/char-sets/` with the names list the first time it is
-  needed, never committed), and the table lists only those in which at least one family
+  needed, never committed; it is tried at `unicode.org/Public/UCD/latest/ucd/` and, if that
+  fails, at `unicode.org/Public/UNIDATA/`, as is the names list), and the table lists only those in which at least one family
   has a glyph. The button left of the lock in the "Group" header opens **Select Glyph
   Categories**: hide the categories you do not need (this only hides the row; the build
   still honours the choices made in it), see in how many fonts each has glyphs (hover the
@@ -262,7 +263,7 @@ A donor's glyph is judged by its **ink** (the outline's bounding box) against th
 the base family, `[0, advance] x [descent, ascent]`. The group and combined-result pages
 show the glyphs **fitted** by default. Turn on **Preview unfitted glyphs** to see the
 donor's originals: the cells the base cell cuts off are outlined red, and each style says
-how many. The rules are in `font_composer/common/fit.py` (pure functions, tested).
+how many. The rules are in `font_composer/common/fitting/fit.py` (pure functions, tested).
 
 Every Unicode block is fitted **together, as a category**, and never stretched:
 
@@ -302,6 +303,7 @@ document, "Glyph fitting").
 ```sh
 .fontbuilder.venv/bin/python -m font_composer build   # font_composer.toml: fonts/ -> output/
 .fontbuilder.venv/bin/python -m font_composer build --output-dir DIR --on-missing nearest
+.fontbuilder.venv/bin/python -m font_composer build --show-proof   # then open the address it prints
 ```
 
 The source and output directories come from the config the console wrote (`[fonts] dir`,
@@ -321,7 +323,43 @@ lists every font the result is made of with its copyright and licence text.
   a glyph; an atomic group never mixes, and half a Box Drawing set refuses the build.
 * **Box drawing joins.** All box and block glyphs of a donor get one map that puts the
   donor's frame exactly on the base cell; what overshoots on purpose is cut at the cell
-  edge. The build then checks that each connector still reaches the edges it was drawn to.
+  edge. Because every glyph of a family goes through the same map, a line stays where the
+  others put it. The build then **checks it on the written file**, for every style: it
+  measures where each glyph of Box Drawing touches the four edges of its cell and
+  compares the ports that are meant to be one line (a light line against a light line, a
+  heavy against a heavy, a double against a double; left against right, top against
+  bottom), and the halves and quarters of Block Elements by the line at which they
+  divide the cell. That is what any table, thin or thick or half of each, joins by. Lines
+  that miss each other by more than 0.01 em (a hairline gap or step at ordinary sizes) in
+  a donor's glyphs are an **error**: that style is not written, the report names the family
+  and the glyphs, and the fix is to choose another family for Box Drawing and Block
+  Elements. Smaller misses, misses in arcs, diagonals and dashed lines, and misses in the
+  base font's own glyphs are warnings. Nothing is retried or repaired: the glyphs are the
+  font designer's, and the build only passes on what it can show.
+* **See it: `--show-proof`.** `build --show-proof` serves, once the fonts are written, a
+  hidden page of the console's web interface (`/buildProof`, linked from nowhere) and prints its
+  address; open it in a browser. It stays on the terminal like the console does (the address and
+  what was written above a window of the requests, and `Press 'Q' to quit or 'R' to Reload`;
+  **R** starts the command over, so the fonts are built again), and it draws, with each written
+  font, a thin table, a thick one, the four tables that are thick in one half and thin in the
+  other (top, bottom, left, right), a double one, one with rounded corners and the
+  Block Elements, and lists the lines the check found apart. The toolbar (it stays at the top
+  while you scroll) has a **Cell Size** slider, **Show Cell Edges** and **Browser Text
+  Rendering**. Only `build --show-proof` serves the page: the console (`compose`) does not
+  answer for it.
+
+  *Why the cells are whole pixels.* A console gives every character a cell of a whole number
+  of pixels, and a browser does not: at any other size its anti-aliasing leaves a faint lighter
+  line at each cell edge, whatever the font. So the page draws each glyph as its **exact
+  outline from the written file**, scaled so that its advance and its line height are
+  exactly the cell, and the slider moves in whole pixels (it shows the cell, such as `30 × 58
+  px`). Measured over cells from 8 to 47 px wide, at pixel ratios 1 and 2, those tables have
+  no seam at all where the glyphs join. **Browser Text Rendering** draws the same tables as
+  ordinary text instead, for comparison: its advance is set to the cell width, which removes
+  the horizontal hairlines, but the browser rounds a font's ascent and descent on its own, so
+  a faint line can remain between rows. The same holds in a console: the base font's cell
+  (`advance / units per em`) is exact in pixels only at some sizes (for the cell of DejaVu
+  Sans Mono, 15 x 29, 30 x 58 and 45 x 87 px), whichever fonts the glyphs come from.
 * **A style a family does not have.** Matching is exact in weight and slant (the rules
   below). When a family has no Bold, the build asks (on a terminal): use a file of the
   family as it is (the nearest weight is offered), **synthesize** a bold from the nearest

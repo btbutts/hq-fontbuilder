@@ -41,17 +41,19 @@ from font_composer.builder.donors import (
 from font_composer.builder.verify import verify_font
 from font_composer.common.composition import resolve_group
 from font_composer.common.config import DEFAULT_STYLES, Config, ConfigError
-from font_composer.common.groups import Catalog
-from font_composer.common.library import FontLibrary
+from font_composer.common.fonts.library import FontLibrary
+from font_composer.common.fonts.styles import output_styles, parse_style_name, same_style_name
 from font_composer.common.paths import DEFAULT_FONTS_DIR, DEFAULT_OUTPUT_DIR
-from font_composer.common.styles import output_styles, parse_style_name, same_style_name
+from font_composer.common.unicode.groups import Catalog
+from font_composer.composer.web import proof
+from font_composer.composer.web.proof import ProofFont
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping
     from pathlib import Path
 
-    from font_composer.common.groups import GlyphGroup
-    from font_composer.common.library import Family, StyleEntry
+    from font_composer.common.fonts.library import Family, StyleEntry
+    from font_composer.common.unicode.groups import GlyphGroup
 
 ON_MISSING = ("ask", "nearest", "synthesize", "fail")
 DEFAULT_FAMILY = "Console Mono"
@@ -71,6 +73,8 @@ class BuildOptions:
     fonts_dir: Path | None = None
     output_dir: Path | None = None
     on_missing: str = "ask"
+    #: after the build, serve a page that draws the box glyphs of the written fonts
+    show_proof: bool = False
 
 
 @dataclass
@@ -326,8 +330,8 @@ class _Run:
     notice_warnings: list[str] = field(default_factory=list)
 
 
-def _write_style(run: _Run, style: str, donors: dict[str, Donor]) -> bool:
-    """Build, verify and report one output style; return whether it succeeded."""
+def _write_style(run: _Run, style: str, donors: dict[str, Donor]) -> Path | None:
+    """Build, verify and report one output style; return the file written, None if it failed."""
     naming = Naming(run.config.style_names.get(style, style), parse_style_name(style),
                     run.config.setting("output", "family", DEFAULT_FAMILY),
                     run.options.output_dir or DEFAULT_OUTPUT_DIR, run.copyright_line)
@@ -346,7 +350,7 @@ def _write_style(run: _Run, style: str, donors: dict[str, Donor]) -> bool:
         if found.errors:
             built.path.unlink(missing_ok=True)
     _report(built, errors, warnings, run.say)
-    return not errors
+    return None if errors else built.path
 
 
 def _groups_of(plan: Plan) -> dict[str, set[str]]:
@@ -445,6 +449,19 @@ def _start(
     return _Run(settled, config, library, plan, say)
 
 
+def _show_proof(
+    written: list[ProofFont], total: int, say: Callable[[str], None],
+) -> None:
+    """Serve the proof page of the fonts that were written (until the user quits)."""
+    if not written:
+        say("font_composer: no font was written, so there is nothing to show a proof of")
+        return
+    names = ", ".join(font.style for font in written)
+    failed = "" if len(written) == total else "; see the report above"
+    proof.serve_proof(written, say,
+                      details=[f"styles: {names} ({len(written)} of {total} written{failed})"])
+
+
 def run_build(
     options: BuildOptions,
     say: Callable[[str], None] = print,
@@ -464,7 +481,10 @@ def run_build(
     donors_of, notice = prepared
     out_dir = run.options.output_dir or DEFAULT_OUTPUT_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
-    results = [_write_style(run, style, donors) for style, donors in donors_of.items()]
+    results = {style: _write_style(run, style, donors) for style, donors in donors_of.items()}
     (out_dir / "NOTICE").write_text(notice, encoding="utf-8")
     say(f"\nNOTICE: {out_dir / 'NOTICE'}")
-    return 0 if all(results) else 1
+    if run.options.show_proof:
+        _show_proof([ProofFont(style, path) for style, path in results.items()
+                     if path is not None], len(results), say)
+    return 0 if all(path is not None for path in results.values()) else 1

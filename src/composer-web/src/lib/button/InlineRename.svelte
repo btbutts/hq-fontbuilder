@@ -3,7 +3,7 @@
 	import IconDeviceFloppy from '@tabler/icons-svelte/icons/device-floppy';
 	import IconPencil from '@tabler/icons-svelte/icons/pencil';
 	import IconPencilCheck from '@tabler/icons-svelte/icons/pencil-check';
-	import { colors } from '../styles.svelte';
+	import { colors } from '../styles.svelte.ts';
 	import BareIconButton from './BareIconButton.svelte';
 
 	/**

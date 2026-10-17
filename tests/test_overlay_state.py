@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from support import build_font, sample_catalog
 
 from font_composer.common.config import Config
-from font_composer.common.groups import build_catalog
+from font_composer.common.unicode.groups import build_catalog
 from font_composer.composer.state import ConsoleState
 
 if TYPE_CHECKING:

@@ -226,6 +226,24 @@ export const colors = {
 	toggleKnobShadow:
 		'shadow-[0_1px_3px_0_rgb(0_0_0/0.1),0_1px_2px_-1px_rgb(0_0_0/0.1)]',
 
+	/**
+	 * A slider names three colours, each as a CSS variable for `Slider.svelte`: the thumb in
+	 * `primary` (the link blue of `textAccent1` in the light theme, the red of the switches in
+	 * the dark one), the rest of the track in `track` (a switch that is off) and the line round
+	 * it in `border`. Every other state is a tint of the primary colour: `filled`, `hover` and
+	 * `pressed` each give a colour and a percentage of it to mix in (a CSS `color-mix`
+	 * argument, `#ffffff 25%`; an underscore stands for the space). The filled part of the track takes `filled`, the thumb
+	 * under the pointer `hover`, and while it is held the thumb and the filled part `pressed`.
+	 */
+	slider: {
+		primary: '[--slider-primary:#1b4965] dark:[--slider-primary:#d63838]',
+		track: '[--slider-track:#b9b9bd] dark:[--slider-track:#3b3d40]',
+		border: '[--slider-border:#9a9aa0] dark:[--slider-border:#6e7074]',
+		filled: '[--slider-filled:#ffffff_25%] dark:[--slider-filled:#565656_25%]',
+		hover: '[--slider-hover:#ffffff_50%] dark:[--slider-hover:#000000_15%]',
+		pressed: '[--slider-pressed:#000000_15%] dark:[--slider-pressed:#ffffff_15%]'
+	},
+
 	// ---- text ---------------------------------------------------------------------------
 
 	/** Body text, headings, tooltip titles; also the base colour of <html>. */

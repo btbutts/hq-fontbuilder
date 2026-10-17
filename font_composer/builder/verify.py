@@ -13,8 +13,9 @@ from typing import TYPE_CHECKING, Any
 
 from fontTools.ttLib import TTFont
 
-from font_composer.common.fit import EPS, Box, overflow_of
-from font_composer.common.ink import glyph_box
+from font_composer.builder.joins import JOIN_GAP, Seam, find_seams
+from font_composer.common.fitting.fit import EPS, Box, overflow_of
+from font_composer.common.fonts.ink import glyph_box
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -46,6 +47,7 @@ def verify_font(path: Path, layout: Layout, advance: int) -> Findings:
     try:
         _check_tables(font, layout, advance, found)
         _check_glyphs(font, layout, advance, found)
+        _check_joins(font, layout, advance, found)
     finally:
         font.close()
     return found
@@ -102,6 +104,35 @@ def _check_glyphs(font: TTFont, layout: Layout, advance: int, found: Findings) -
     if base_letters:
         found.warnings.append(
             f"{base_letters} letters of the base font itself leave its cell (not changed)")
+
+
+def _check_joins(font: TTFont, layout: Layout, advance: int, found: Findings) -> None:
+    """Check that the box glyphs meet each other (see :mod:`joins`).
+
+    A miss that shows (``JOIN_GAP``) in glyphs a donor drew is an error: the style would
+    draw tables with gaps. A smaller one, one in an arc, a diagonal or a dashed line, or one
+    in the base font's own glyphs, is a warning.
+    """
+    cell, upm = _cell_of(font, advance)
+    for seam in find_seams(font, cell, upm):
+        donors = sorted({layout.drawn_from[member.codepoint] for member in seam.members
+                         if member.codepoint in layout.drawn_from})
+        text = _seam_text(seam, donors)
+        if donors and not seam.soft and seam.spread > JOIN_GAP:
+            found.errors.append(text)
+        else:
+            found.warnings.append(text)
+
+
+def _seam_text(seam: Seam, donors: list[str]) -> str:
+    """Say which glyphs fail to join, by how much, and what to do about it."""
+    low = min(seam.members, key=lambda member: member.start)
+    high = max(seam.members, key=lambda member: member.start)
+    source = f" of {', '.join(donors)}" if donors else " of the base font"
+    return (f"box glyphs{source} do not join: U+{low.codepoint:04X} ({low.edge}) has its line "
+            f"at {low.start:.3f} em and U+{high.codepoint:04X} ({high.edge}) at "
+            f"{high.start:.3f} em, {seam.spread:.3f} em apart, so a drawn table shows a gap or "
+            "a step there; choose another family for Box Drawing and Block Elements")
 
 
 def _is_letter(codepoint: int) -> bool:

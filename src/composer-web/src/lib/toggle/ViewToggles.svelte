@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { FULL_GRID_MAX } from '../glyph/glyphLayout';
+	import { FULL_GRID_MAX } from '../glyph/glyphLayout.ts';
 	import Toggle from './Toggle.svelte';
-	import { viewOptions } from './viewOptions.svelte';
+	import { viewOptions } from './viewOptions.svelte.ts';
 
 	interface Props {
 		/** code points in the group: a group too large to draw whole always wraps */

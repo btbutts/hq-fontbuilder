@@ -2,7 +2,7 @@
 
 The fonts directory holds one sub-folder per family; the folder name is the family
 label shown in the console. Every font file inside is read with
-:func:`font_composer.common.inspect.read_font`. Files that fail to read are collected
+:func:`font_composer.common.fonts.inspect.read_font`. Files that fail to read are collected
 as problem entries with their reason, never silently skipped.
 
 The coverage cell of a family is the coverage of its *reference style*, the upright
@@ -22,12 +22,12 @@ from functools import cached_property
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from font_composer.common.inspect import FontError, FontInfo, looks_like_font, read_font
+from font_composer.common.fonts.inspect import FontError, FontInfo, looks_like_font, read_font
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
-    from font_composer.common.groups import GlyphGroup
+    from font_composer.common.unicode.groups import GlyphGroup
 
 REGULAR_WEIGHT = 400
 

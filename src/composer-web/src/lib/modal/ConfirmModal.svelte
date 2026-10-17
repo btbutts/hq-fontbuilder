@@ -1,7 +1,7 @@
 <script lang="ts">
 	import CtrlButton from '../button/CtrlButton.svelte';
-	import { colors } from '../styles.svelte';
-	import { lockScroll } from './scrollLock';
+	import { colors } from '../styles.svelte.ts';
+	import { lockScroll } from './scrollLock.ts';
 
 	interface Props {
 		title: string;

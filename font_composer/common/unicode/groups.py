@@ -1,7 +1,7 @@
 """Glyph categories: the Unicode blocks, the optional overlay, and the coverage maths.
 
 A *block* is an entry of ``Blocks.txt``; its id is its official name, and it is what the
-configuration and the build use. An *overlay category* (``common/overlay.py``) is a named
+configuration and the build use. An *overlay category* (``common/unicode/overlay.py``) is a named
 part of a block, shown instead of that block when the overlay is on. A block counts the
 code points ``NamesList.txt`` names as characters (its ``<control>``, ``<reserved>`` and
 ``<not a character>`` placeholders are not); a block with none (Private Use Area, the CJK
@@ -16,15 +16,15 @@ from dataclasses import dataclass, field
 from functools import cached_property
 from typing import TYPE_CHECKING
 
-from font_composer.common.blocks import UNICODE_CHAR_RANGES_PATH, load_blocks
-from font_composer.common.names import UnicodeNames
-from font_composer.common.overlay import OVERLAY_CATEGORIES
+from font_composer.common.unicode.blocks import UNICODE_CHAR_RANGES_PATH, load_blocks
+from font_composer.common.unicode.names import UnicodeNames
+from font_composer.common.unicode.overlay import OVERLAY_CATEGORIES
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
     from pathlib import Path
 
-    from font_composer.common.blocks import Block
+    from font_composer.common.unicode.blocks import Block
 
 #: blocks whose glyphs must all come from one family
 ATOMIC_BLOCKS = ("Box Drawing", "Block Elements")

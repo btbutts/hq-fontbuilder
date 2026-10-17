@@ -13,12 +13,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from font_composer.common.paths import PROJECT_ROOT
-from font_composer.common.ucd import UCD_URL, download, ensure_file
+from font_composer.common.unicode.ucd import UCD_PREFIXES, download, ensure_file
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
-UNICODE_CHAR_NAMES_URL = f"{UCD_URL}/NamesList.txt"
+UNICODE_CHAR_NAMES_URLS = tuple(f"{prefix}/NamesList.txt" for prefix in UCD_PREFIXES)
 UNICODE_CHAR_NAMES_PATH = PROJECT_ROOT / "src" / "char-sets" / "NamesList.txt"
 
 _CHARACTER_LINE = re.compile(r"^([0-9A-F]{4,6})\t(\S.*)$")
@@ -40,7 +40,7 @@ def parse_names_list(text: str) -> dict[int, str]:
 
 def ensure_names_list(
     path: Path = UNICODE_CHAR_NAMES_PATH,
-    url: str = UNICODE_CHAR_NAMES_URL,
+    urls: Sequence[str] = UNICODE_CHAR_NAMES_URLS,
     *,
     fetch: Callable[[str], bytes] = download,
     say: Callable[[str], None] = print,
@@ -50,7 +50,7 @@ def ensure_names_list(
     Return True when the file is there afterwards. A failed download is reported through
     ``say`` and is not an error: the tool runs without names.
     """
-    return ensure_file(path, url, "glyph names", fetch=fetch, say=say)
+    return ensure_file(path, urls, "glyph names", fetch=fetch, say=say)
 
 
 class UnicodeNames:

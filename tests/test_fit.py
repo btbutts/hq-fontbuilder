@@ -1,4 +1,4 @@
-"""Tests for font_composer.common.fit and ink: the clipping classes and their fixes."""
+"""Tests for font_composer.common.fitting.fit and ink: the clipping classes and their fixes."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import pytest
 from support import FontSpec, MetricSpec, build_font
 
-from font_composer.common.fit import (
+from font_composer.common.fitting.fit import (
     CLASS_FLOORS,
     Box,
     CellSpec,
@@ -17,7 +17,7 @@ from font_composer.common.fit import (
     plan_fit,
     plan_in_class,
 )
-from font_composer.common.ink import read_ink
+from font_composer.common.fonts.ink import read_ink
 
 if TYPE_CHECKING:
     from pathlib import Path

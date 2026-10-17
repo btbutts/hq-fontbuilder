@@ -17,8 +17,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from font_composer.common.groups import GlyphGroup
-    from font_composer.common.library import FontLibrary
+    from font_composer.common.fonts.library import FontLibrary
+    from font_composer.common.unicode.groups import GlyphGroup
 
 
 @dataclass(frozen=True)

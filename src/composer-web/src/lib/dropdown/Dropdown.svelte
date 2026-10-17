@@ -1,6 +1,6 @@
 <script lang="ts">
 	import IconChevronDown from '@tabler/icons-svelte/icons/chevron-down';
-	import { colors } from '../styles.svelte';
+	import { colors } from '../styles.svelte.ts';
 
 	export interface DropdownOption {
 		value: string;

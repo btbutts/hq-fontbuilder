@@ -2,7 +2,7 @@
 	import type { Snippet } from 'svelte';
 	import IconMenu2 from '@tabler/icons-svelte/icons/menu-2';
 	import BareIconButton from '../button/BareIconButton.svelte';
-	import { colors, floating } from '../styles.svelte';
+	import { colors, floating } from '../styles.svelte.ts';
 
 	interface Props {
 		/** the whole toolbar, drawn while it fits on one line */

@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { page } from '$app/state';
 	import '../app.css';
-	import { consoleStore } from '#lib/data/console.svelte.ts';
-	import { colors } from '#lib/styles.svelte.ts';
-	import Tooltip from '#lib/tooltip/Tooltip.svelte';
+	import {
+		colors, consoleStore, Tooltip
+	} from '#lib';
 
 	let { children } = $props();
 
@@ -17,7 +18,8 @@
 		document.documentElement.classList.add(...rootClasses);
 	});
 
-	onMount(() => consoleStore.startPolling());
+	// the build proof is served without the console's API: nothing to poll there
+	onMount(() => (page.url.pathname.startsWith('/buildProof') ? undefined : consoleStore.startPolling()));
 </script>
 
 <!-- --page-gutter is the margin round every page; PageHeader and StickyBar bleed into it. -->

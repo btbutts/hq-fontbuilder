@@ -2,30 +2,12 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import {
-		fetchComposition,
-		postChoose,
-		postGlyph,
-		type ChooseAction,
-		type Composition,
-		type ResolvedGlyph
-	} from '#lib/data/api.ts';
-	import CtrlButton from '#lib/button/CtrlButton.svelte';
-	import { consoleStore } from '#lib/data/console.svelte.ts';
-	import { overlayStore } from '#lib/data/overlay.svelte.ts';
-	import Dropdown from '#lib/dropdown/Dropdown.svelte';
-	import { familyColor, familyCssName, fontFaceRules, installFontFaces } from '#lib/glyph/families.ts';
-	import GlyphChooser, { type Candidate } from '#lib/glyph/GlyphChooser.svelte';
-	import { clippedCount } from '#lib/glyph/fitDisplay.ts';
-	import GlyphGrid from '#lib/glyph/GlyphGrid.svelte';
-	import PageHeader from '#lib/layout/PageHeader.svelte';
-	import { colors } from '#lib/styles.svelte.ts';
-	import StickyBar from '#lib/layout/StickyBar.svelte';
-	import ThemeToggle from '#lib/toggle/ThemeToggle.svelte';
-	import { unicodeNames } from '#lib/data/unicodeNames.svelte.ts';
-	import { FULL_GRID_MAX, geometryFor, PAGE_SIZE, type LayoutCell } from '#lib/glyph/glyphLayout.ts';
-	import ViewToggles from '#lib/toggle/ViewToggles.svelte';
-	import { tip } from '#lib/tooltip/tooltip.ts';
-	import { viewOptions } from '#lib/toggle/viewOptions.svelte.ts';
+		clippedCount, colors, consoleStore, CtrlButton, Dropdown, familyColor, familyCssName,
+		fetchComposition, fontFaceRules, FULL_GRID_MAX, geometryFor, GlyphChooser, GlyphGrid,
+		installFontFaces, overlayStore, PAGE_SIZE, PageHeader, postChoose, postGlyph, StickyBar,
+		ThemeToggle, tip, unicodeNames, viewOptions, ViewToggles,
+		type Candidate, type ChooseAction, type Composition, type LayoutCell, type ResolvedGlyph
+	} from '#lib';
 
 	const GLYPH_EM_PX = 64;
 	const FONT_FACE_ELEMENT_ID = 'fc-font-faces';

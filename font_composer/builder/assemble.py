@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any
 from fontTools.fontBuilder import FontBuilder
 
 from font_composer.builder.draw import CellBox, DrawSpec, Source, draw_glyph, draw_named
-from font_composer.common.fit import (
+from font_composer.common.fitting.fit import (
     EPS,
     Box,
     CellSpec,
@@ -26,7 +26,7 @@ from font_composer.common.fit import (
     overflow_of,
     plan_fit,
 )
-from font_composer.common.planner import (
+from font_composer.common.fitting.planner import (
     FitTarget,
     cell_of,
     connector_reach,
@@ -39,9 +39,9 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     from font_composer.builder.donors import Donor
-    from font_composer.common.groups import Catalog, GlyphGroup
-    from font_composer.common.library import FontLibrary
-    from font_composer.common.styles import StyleTarget
+    from font_composer.common.fonts.library import FontLibrary
+    from font_composer.common.fonts.styles import StyleTarget
+    from font_composer.common.unicode.groups import Catalog, GlyphGroup
 
 MAX_GLYPHS = 65535
 NOTDEF = ".notdef"

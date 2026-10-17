@@ -23,7 +23,7 @@ import IconArrowRight from '@tabler/icons-svelte/icons/arrow-right';
 import IconMinus from '@tabler/icons-svelte/icons/minus';
 import IconPlus from '@tabler/icons-svelte/icons/plus';
 import IconX from '@tabler/icons-svelte/icons/x';
-import { colors } from '../styles.svelte';
+import { colors } from '../styles.svelte.ts';
 
 /** Any Tabler icon: they all share one props type. */
 export type IconComponent = typeof IconX;

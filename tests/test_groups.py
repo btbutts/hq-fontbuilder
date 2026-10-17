@@ -1,11 +1,11 @@
-"""Tests for font_composer.common.groups: blocks, totals, the overlay rows, coverage."""
+"""Tests for font_composer.common.unicode.groups: blocks, totals, the overlay rows, coverage."""
 
 from __future__ import annotations
 
 from support import sample_catalog
 
-from font_composer.common.blocks import parse_blocks
-from font_composer.common.groups import ATOMIC_BLOCKS, GlyphGroup, build_catalog, coverage
+from font_composer.common.unicode.blocks import parse_blocks
+from font_composer.common.unicode.groups import ATOMIC_BLOCKS, GlyphGroup, build_catalog, coverage
 
 POWERLINE_TOTAL = 53
 EXPECTED_TOTALS = {

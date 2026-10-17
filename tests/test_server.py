@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from support import FontSpec, NameSpec, build_font, sample_catalog
 
+from font_composer.common.cli import ports
 from font_composer.common.config import Config
 from font_composer.composer.state import ConsoleState
-from font_composer.composer.web import ports
 from font_composer.composer.web import server as web_server
 
 if TYPE_CHECKING:

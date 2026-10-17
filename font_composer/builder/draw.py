@@ -21,7 +21,7 @@ from fontTools.pens.ttGlyphPen import TTGlyphPen
 from fontTools.ttLib import TTFont
 from fontTools.varLib import instancer
 
-from font_composer.common.fit import FitPlan
+from font_composer.common.fitting.fit import FitPlan
 
 if TYPE_CHECKING:
     from pathlib import Path

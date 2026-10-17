@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
 	import type { HTMLButtonAttributes } from 'svelte/elements';
-	import { colors } from '../styles.svelte';
-	import { tip } from '../tooltip/tooltip';
+	import { colors } from '../styles.svelte.ts';
+	import { tip } from '../tooltip/tooltip.ts';
 	import {
 		DEFAULT_ICON_SIZE,
 		DEFAULT_PADDING,
@@ -11,7 +11,7 @@
 		surfaces,
 		type ButtonFunction,
 		type Surface
-	} from './presets';
+	} from './presets.ts';
 
 	/**
 	 * The one button of the console.

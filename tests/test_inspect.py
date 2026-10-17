@@ -1,4 +1,4 @@
-"""Tests for font_composer.common.inspect: metadata and the error path."""
+"""Tests for font_composer.common.fonts.inspect: metadata and the error path."""
 
 from __future__ import annotations
 
@@ -6,7 +6,13 @@ from pathlib import Path
 
 from support import FontSpec, MetricSpec, NameSpec, build_font
 
-from font_composer.common.inspect import FontError, FontInfo, FontMetrics, FontNames, read_font
+from font_composer.common.fonts.inspect import (
+    FontError,
+    FontInfo,
+    FontMetrics,
+    FontNames,
+    read_font,
+)
 
 SPEC = FontSpec(names=NameSpec(family="Specimen Mono", style="Book", weight=450),
                 metrics=MetricSpec(upm=2048, ascent=1901, descent=-483, advance=1233))

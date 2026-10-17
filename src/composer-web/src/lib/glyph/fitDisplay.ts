@@ -1,4 +1,4 @@
-import type { FitInfo } from '../data/api';
+import type { FitInfo } from '../data/api.ts';
 
 /** How many of the given fits are glyphs the base cell cuts off. */
 export function clippedCount(fits: Iterable<FitInfo | undefined>): number {

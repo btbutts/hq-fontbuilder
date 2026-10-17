@@ -1,4 +1,4 @@
-"""Tests for font_composer.composer.web.ports: candidates, in-use detection, choice."""
+"""Tests for font_composer.common.cli.ports: candidates, in-use detection, choice."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from font_composer.composer.web import ports
+from font_composer.common.cli import ports
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

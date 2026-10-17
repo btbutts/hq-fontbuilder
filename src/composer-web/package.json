@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "imports": {
-    "#lib": "./src/lib/index.js",
+    "#lib": "./src/lib/index.ts",
     "#lib/*": "./src/lib/*"
   },
   "scripts": {
@@ -14,7 +14,7 @@
     "sync": "svelte-kit sync",
     "prepare": "bun --bun run sync",
     "check": "bun --bun run sync && svelte-check --tsconfig ./tsconfig.json",
-    "test": "bun test ./src/lib/glyph/glyphLayout.test.ts ./src/lib/table/columnOrder.test.ts ./src/lib/data/overlayStorage.test.ts"
+    "test": "bun test ./src/lib/glyph/glyphLayout.test.ts ./src/lib/table/columnOrder.test.ts ./src/lib/data/overlayStorage.test.ts ./src/lib/proof/boxTables.test.ts ./src/lib/proof/cellGrid.test.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^4.0.0",

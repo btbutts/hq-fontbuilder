@@ -1,7 +1,7 @@
 <script lang="ts">
-	import type { IconComponent } from '../button/presets';
-	import { colors } from '../styles.svelte';
-	import { tip } from '../tooltip/tooltip';
+	import type { IconComponent } from '../button/presets.ts';
+	import { colors } from '../styles.svelte.ts';
+	import { tip } from '../tooltip/tooltip.ts';
 
 	interface Props {
 		checked: boolean;

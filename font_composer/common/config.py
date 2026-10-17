@@ -13,7 +13,7 @@ What the console writes:
 * ``[glyphs]``: a code point -> the family that serves it, taking precedence over the
   order (``"U+2714" = { family = "DejaVu" }``).
 * ``[styles.<Output>]``: a family -> the style file (or style name) that serves that
-  output style, replacing the default rules of :mod:`font_composer.common.styles`.
+  output style, replacing the default rules of :mod:`font_composer.common.fonts.styles`.
 * ``[output] style-names``: a style name the fonts give (``Oblique``) -> the name it is
   built and written as (``Italic``). The key never goes away: it is what the style is
   tracked by (``[styles.Oblique]`` and the list of included styles keep using it).

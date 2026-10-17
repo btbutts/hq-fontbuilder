@@ -11,7 +11,7 @@ import pytest
 from support import FontSpec, NameSpec, build_font, sample_catalog
 
 from font_composer.common.config import Config
-from font_composer.common.names import UnicodeNames
+from font_composer.common.unicode.names import UnicodeNames
 from font_composer.composer.state import ConsoleState
 
 COMMENTED = """\
