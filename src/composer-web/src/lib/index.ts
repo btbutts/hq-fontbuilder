@@ -29,6 +29,7 @@ export { viewOptions } from './toggle/viewOptions.svelte.ts';
 // Page layout, tables and modals
 export { default as PageHeader } from './layout/PageHeader.svelte';
 export { default as StickyBar } from './layout/StickyBar.svelte';
+export { default as FontLoader } from './loader/FontLoader.svelte';
 export { ColumnOrder } from './table/columnOrder.svelte.ts';
 export { default as ReorderableColumns } from './table/ReorderableColumns.svelte';
 export { default as ConfirmModal } from './modal/ConfirmModal.svelte';

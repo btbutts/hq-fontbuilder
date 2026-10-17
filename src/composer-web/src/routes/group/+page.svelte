@@ -3,7 +3,8 @@
 	import { page } from '$app/state';
 	import {
 		clippedCount, colors, ConfirmModal, consoleStore, CtrlButton, emphasis, fetchFit,
-		fetchGlyphs, FULL_GRID_MAX, geometryFor, GlyphGrid, installFontFaces, overlayStore,
+		fetchGlyphs, FontLoader, FULL_GRID_MAX, geometryFor, GlyphGrid, installFontFaces,
+		overlayStore,
 		PAGE_SIZE, PageHeader, postChoose, StickyBar, ThemeToggle, tip, Toggle, unicodeNames,
 		viewOptions, ViewToggles,
 		type FitInfo, type GlyphsPayload, type GroupInfo
@@ -88,6 +89,39 @@
 			cancelled = true;
 		};
 	});
+
+	// Nothing of the styles is drawn until their glyph lists are here and their font files
+	// are loaded; the page shows one loader meanwhile.
+	let loadedFonts = $state('');
+	const fontsKey = $derived(`${familyLabel}|${groupId}`);
+
+	$effect(() => {
+		const key = fontsKey;
+		const styles = family?.styles;
+		if (!styles || currentGlyphs === null || loadedFonts === key) return;
+		let cancelled = false;
+		Promise.allSettled(
+			styles.map((style, index) =>
+				document.fonts.load(
+					`${GLYPH_EM_PX}px "fc-style-${index}"`,
+					String.fromCodePoint(held(style.file)[0] ?? 0x20)
+				)
+			)
+		).then(() => {
+			if (!cancelled) loadedFonts = key;
+		});
+		return () => {
+			cancelled = true;
+		};
+	});
+
+	const stylesReady = $derived(
+		loadedFonts === fontsKey &&
+			currentGlyphs !== null &&
+			(group === undefined ||
+				group.total <= FULL_GRID_MAX ||
+				(family?.styles ?? []).every((style) => readyLimit[style.file] !== undefined))
+	);
 
 	let shownLimits = $state<Record<string, number>>({});
 
@@ -354,12 +388,18 @@
 		{/snippet}
 	</StickyBar>
 
+	{#if glyphsError !== null && currentGlyphs === null}
+		<p class="mt-4 text-[14px] {colors.textError}">{glyphsError}</p>
+	{:else if !stylesReady}
+		<FontLoader />
+	{:else}
 <!-- All the styles scroll sideways together, so a column stays comparable across them. -->
 	<div class="overflow-x-auto pb-4">
 
 	{#each family.styles as style, index (style.file)}
 		{@const present = currentGlyphs?.styles[style.file]?.length ?? 0}
 		{@const total = group.total}
+		{@const cells = visibleCells(style.file, group)}
 		<section class={layoutMode === 'rows' ? 'w-max min-w-full' : ''}>
 			<div class="sticky left-0 w-fit max-w-[min(64rem,calc(100vw-4rem))]">
 				<h3 class="mt-4 mb-0.5 text-[1rem] font-semibold">{style.file} — {style.style}</h3>
@@ -375,22 +415,17 @@
 				</p>
 			</div>
 			<div class="mt-2 mb-10">
-				{#if currentGlyphs === null || (group.total > FULL_GRID_MAX && readyLimit[style.file] === undefined)}
-					<p class="m-0 text-[14px] {colors.textSecondary}">{glyphsError ?? 'loading glyphs…'}</p>
+				{#if cells.length === 0}
+					<p class="m-0 text-[14px] {colors.textError}">this style holds no glyph of this group</p>
 				{:else}
-					{@const cells = visibleCells(style.file, group)}
-					{#if cells.length === 0}
-						<p class="m-0 text-[14px] {colors.textError}">this style holds no glyph of this group</p>
-					{:else}
-						<GlyphGrid
-							namedRows={group.rows}
-							{cells}
-							mode={layoutMode}
-							fontFamily="fc-style-{index}"
-							{geometry}
-							showFitted={viewOptions.showFitted}
-						/>
-					{/if}
+					<GlyphGrid
+						namedRows={group.rows}
+						{cells}
+						mode={layoutMode}
+						fontFamily="fc-style-{index}"
+						{geometry}
+						showFitted={viewOptions.showFitted}
+					/>
 				{/if}
 			</div>
 			{#if group.total > FULL_GRID_MAX}
@@ -408,6 +443,7 @@
 		</section>
 	{/each}
 	</div>
+	{/if}
 {/if}
 
 {#if confirmClear}
